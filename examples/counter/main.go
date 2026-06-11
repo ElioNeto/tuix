@@ -31,7 +31,7 @@ func main() {
 
 	app.SetCSS(`
 		#app {
-			padding: 10px;
+			padding: 1;
 			background-color: #1a1a2e;
 			color: #e0e0e0;
 		}
@@ -40,32 +40,31 @@ func main() {
 			text-align: center;
 			color: #00d4aa;
 			font-weight: bold;
-			margin-bottom: 20px;
+			margin-bottom: 1;
 		}
 
 		.counter-box {
 			text-align: center;
-			margin: 20px;
-			padding: 20px;
+			margin: 2;
+			padding: 2;
 			border: solid;
 			border-color: #16213e;
 			background-color: #0f3460;
 		}
 
 		.counter {
-			font-size: 48;
 			color: #e94560;
 			font-weight: bold;
-			margin: 20px;
+			margin: 1;
 		}
 
 		.buttons {
-			margin: 10px;
+			margin: 1;
 		}
 
 		.btn {
-			padding: 5px 10px;
-			margin: 5px;
+			padding: 0 1;
+			margin: 1;
 			border: solid;
 			border-color: #00d4aa;
 			color: #00d4aa;
@@ -80,7 +79,7 @@ func main() {
 		.footer {
 			text-align: center;
 			color: #888;
-			margin-top: 10px;
+			margin-top: 1;
 		}
 	`)
 

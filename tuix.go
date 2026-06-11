@@ -127,8 +127,8 @@ func (a *App) Run() error {
 	}
 
 	// Update viewport in layout engine
-	a.layout.ViewWidth = float64(a.width * 8)  // approximate pixel width
-	a.layout.ViewHeight = float64(a.height * 16) // approximate pixel height
+	a.layout.ViewWidth = float64(a.width)
+	a.layout.ViewHeight = float64(a.height)
 
 	// Parse HTML
 	if a.html != "" {
@@ -258,8 +258,8 @@ func (a *App) handleEvent(event terminal.Event) {
 	case terminal.EventResize:
 		a.width = event.Width
 		a.height = event.Height
-		a.layout.ViewWidth = float64(a.width * 8)
-		a.layout.ViewHeight = float64(a.height * 16)
+		a.layout.ViewWidth = float64(a.width)
+		a.layout.ViewHeight = float64(a.height)
 		a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
 		a.renderFrame()
 		if a.onResize != nil {

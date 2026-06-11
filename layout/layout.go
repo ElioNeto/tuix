@@ -82,12 +82,12 @@ func (e *LayoutEngine) Layout(doc *dom.Node, resolvers map[*dom.Node]style.Compu
 	if e.ViewWidth > 0 {
 		e.Root.ComputedWidth = e.ViewWidth
 	} else {
-		e.Root.ComputedWidth = 80 * 8 // Default: 80 columns * 8px char width
+		e.Root.ComputedWidth = 80 // Default: 80 columns
 	}
 	if e.ViewHeight > 0 {
 		e.Root.ComputedHeight = e.ViewHeight
 	} else {
-		e.Root.ComputedHeight = 24 * 16 // Default: 24 rows * 16px line height
+		e.Root.ComputedHeight = 24 // Default: 24 rows
 	}
 	e.Root.Rect.Width = int(e.Root.ComputedWidth)
 	e.Root.Rect.Height = int(e.Root.ComputedHeight)
@@ -215,17 +215,11 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 	for _, child := range box.Children {
 		// Inherit parent width for percentage calculations
 		if child.Type == BoxText {
-			// Text content dimensions
+			// Text content dimensions — 1 character = 1 cell
 			text := child.Node.Data
-			charWidth := 8.0 // Approximate character width in pixels
-			charHeight := float64(box.Style.FontSize.Value)
-			if charHeight == 0 {
-				charHeight = 16
-			}
 
 			// Calculate wrapped text dimensions
 			availableWidth := box.ContentRect.Width
-			lineHeight := charHeight * 1.2
 
 			// Simple word wrapping
 			words := strings.Fields(text)
@@ -235,16 +229,16 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 
 			currentLineWidth := 0.0
 			maxLineWidth := 0.0
-			totalHeight := lineHeight
+			totalHeight := 1.0
 
 			for _, word := range words {
-				wordWidth := float64(len(word)) * charWidth
+				wordWidth := float64(len(word))
 				if currentLineWidth+wordWidth > float64(availableWidth) && currentLineWidth > 0 {
 					// New line
-					totalHeight += lineHeight
+					totalHeight += 1.0
 					currentLineWidth = wordWidth
 				} else {
-					currentLineWidth += wordWidth + charWidth // + space
+					currentLineWidth += wordWidth + 1.0 // + space
 				}
 				if currentLineWidth > maxLineWidth {
 					maxLineWidth = currentLineWidth
