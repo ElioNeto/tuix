@@ -124,7 +124,7 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 		return box
 	}
 
-	if node.Type != dom.NodeElement {
+	if node.Type != dom.NodeElement && node.Type != dom.NodeDocument {
 		return nil
 	}
 
@@ -133,6 +133,10 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 		Node:   node,
 		Style:  s,
 		Parent: parent,
+	}
+
+	if node.Type == dom.NodeDocument {
+		box.Type = BoxRoot
 	}
 
 	if s.Display == style.DisplayInline {
