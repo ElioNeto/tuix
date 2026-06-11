@@ -659,9 +659,46 @@ func applyPadding(style *ComputedStyle, v css.Value) {
 }
 
 func applyBorder(style *ComputedStyle, v css.Value) {
+	// Handle single value (e.g., border: solid)
+	if v.Type == css.ValueKeyword {
+		bs := parseBorderStyleKeyword(v.Keyword)
+		if bs != BorderNone {
+			style.BorderTop.Style = bs
+			style.BorderRight.Style = bs
+			style.BorderBottom.Style = bs
+			style.BorderLeft.Style = bs
+			// Default width if none set
+			if style.BorderTop.Width.Unit == LengthAuto {
+				style.BorderTop.Width = Length{Value: 1, Unit: LengthPx}
+				style.BorderRight.Width = Length{Value: 1, Unit: LengthPx}
+				style.BorderBottom.Width = Length{Value: 1, Unit: LengthPx}
+				style.BorderLeft.Width = Length{Value: 1, Unit: LengthPx}
+			}
+		}
+		return
+	}
+
+	if v.Type == css.ValueColor {
+		cv := cssColorToColorValue(v)
+		style.BorderTop.Color = cv
+		style.BorderRight.Color = cv
+		style.BorderBottom.Color = cv
+		style.BorderLeft.Color = cv
+		return
+	}
+
+	if v.Type == css.ValueLength || v.Type == css.ValueNumber {
+		l := cssLengthToStyleLength(v)
+		style.BorderTop.Width = l
+		style.BorderRight.Width = l
+		style.BorderBottom.Width = l
+		style.BorderLeft.Width = l
+		return
+	}
+
 	if v.Type == css.ValueList {
 		for _, sv := range v.Values {
-			if sv.Type == css.ValueLength || sv.Type == css.ValueKeyword {
+			if sv.Type == css.ValueLength || sv.Type == css.ValueKeyword || sv.Type == css.ValueColor {
 				// Check if it's a width, style, or color
 				switch strings.ToLower(sv.Keyword) {
 				case "solid", "dashed", "dotted", "double", "groove", "ridge", "inset", "outset", "none":
@@ -683,7 +720,7 @@ func applyBorder(style *ComputedStyle, v css.Value) {
 						style.BorderRight.Color = cv
 						style.BorderBottom.Color = cv
 						style.BorderLeft.Color = cv
-					} else if sv.Type == css.ValueLength {
+					} else if sv.Type == css.ValueLength || sv.Type == css.ValueNumber {
 						l := cssLengthToStyleLength(sv)
 						style.BorderTop.Width = l
 						style.BorderRight.Width = l
