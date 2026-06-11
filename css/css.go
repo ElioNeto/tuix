@@ -680,7 +680,15 @@ func (p *Parser) parseSingleValue() (Value, bool) {
 			return Value{Type: ValueAuto, Keyword: ident}, true
 		case "none":
 			return Value{Type: ValueNone, Keyword: ident}, true
+		case "transparent":
+			return Value{Type: ValueColor, Color: Color{Type: ColorTransparent}}, true
+		case "currentcolor":
+			return Value{Type: ValueColor, Color: Color{Type: ColorCurrent}}, true
 		default:
+			// Check if it's a named color
+			if c, ok := namedCSSColor(strings.ToLower(ident)); ok {
+				return Value{Type: ValueColor, Color: c}, true
+			}
 			return Value{Type: ValueKeyword, Keyword: ident}, true
 		}
 	}
@@ -779,9 +787,46 @@ func (p *Parser) parseHashColor() (Value, bool) {
 	}
 
 	return Value{
-		Type:  ValueColor,
-		Color: Color{Type: ColorHex, Hex: "#" + hex},
+		Type: ValueColor,
+		Color: parseHexToColor(hex),
 	}, true
+}
+
+// parseHexToColor converts a hex color string (without #) to a Color struct.
+func parseHexToColor(hex string) Color {
+	c := Color{Type: ColorHex, Hex: "#" + hex}
+	switch len(hex) {
+	case 3:
+		c.R = hexPair(hex[0:1] + hex[0:1])
+		c.G = hexPair(hex[1:2] + hex[1:2])
+		c.B = hexPair(hex[2:3] + hex[2:3])
+	case 6:
+		c.R = hexPair(hex[0:2])
+		c.G = hexPair(hex[2:4])
+		c.B = hexPair(hex[4:6])
+	}
+	return c
+}
+
+// hexPair converts a 2-character hex string to a byte value.
+func hexPair(s string) uint8 {
+	if len(s) == 1 {
+		s = s + s
+	}
+	var v uint8
+	for i := 0; i < len(s); i++ {
+		v <<= 4
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+			v |= c - '0'
+		case c >= 'a' && c <= 'f':
+			v |= c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			v |= c - 'A' + 10
+		}
+	}
+	return v
 }
 
 func (p *Parser) parseFunctionValue(name string) (Value, bool) {
@@ -1045,4 +1090,109 @@ func clampF(v, min, max float64) float64 {
 		return max
 	}
 	return v
+}
+
+// namedCSSColor maps CSS named colors to their RGB values.
+func namedCSSColor(name string) (Color, bool) {
+	switch name {
+	case "black":
+		return Color{Type: ColorNamed, R: 0, G: 0, B: 0, A: 1}, true
+	case "silver":
+		return Color{Type: ColorNamed, R: 192, G: 192, B: 192, A: 1}, true
+	case "gray", "grey":
+		return Color{Type: ColorNamed, R: 128, G: 128, B: 128, A: 1}, true
+	case "white":
+		return Color{Type: ColorNamed, R: 255, G: 255, B: 255, A: 1}, true
+	case "maroon":
+		return Color{Type: ColorNamed, R: 128, G: 0, B: 0, A: 1}, true
+	case "red":
+		return Color{Type: ColorNamed, R: 255, G: 0, B: 0, A: 1}, true
+	case "purple":
+		return Color{Type: ColorNamed, R: 128, G: 0, B: 128, A: 1}, true
+	case "fuchsia":
+		return Color{Type: ColorNamed, R: 255, G: 0, B: 255, A: 1}, true
+	case "green":
+		return Color{Type: ColorNamed, R: 0, G: 128, B: 0, A: 1}, true
+	case "lime":
+		return Color{Type: ColorNamed, R: 0, G: 255, B: 0, A: 1}, true
+	case "olive":
+		return Color{Type: ColorNamed, R: 128, G: 128, B: 0, A: 1}, true
+	case "yellow":
+		return Color{Type: ColorNamed, R: 255, G: 255, B: 0, A: 1}, true
+	case "navy":
+		return Color{Type: ColorNamed, R: 0, G: 0, B: 128, A: 1}, true
+	case "blue":
+		return Color{Type: ColorNamed, R: 0, G: 0, B: 255, A: 1}, true
+	case "teal":
+		return Color{Type: ColorNamed, R: 0, G: 128, B: 128, A: 1}, true
+	case "aqua":
+		return Color{Type: ColorNamed, R: 0, G: 255, B: 255, A: 1}, true
+	case "orange":
+		return Color{Type: ColorNamed, R: 255, G: 165, B: 0, A: 1}, true
+	case "pink":
+		return Color{Type: ColorNamed, R: 255, G: 192, B: 203, A: 1}, true
+	case "brown":
+		return Color{Type: ColorNamed, R: 165, G: 42, B: 42, A: 1}, true
+	case "coral":
+		return Color{Type: ColorNamed, R: 255, G: 127, B: 80, A: 1}, true
+	case "crimson":
+		return Color{Type: ColorNamed, R: 220, G: 20, B: 60, A: 1}, true
+	case "darkblue":
+		return Color{Type: ColorNamed, R: 0, G: 0, B: 139, A: 1}, true
+	case "darkcyan":
+		return Color{Type: ColorNamed, R: 0, G: 139, B: 139, A: 1}, true
+	case "darkgray", "darkgrey":
+		return Color{Type: ColorNamed, R: 169, G: 169, B: 169, A: 1}, true
+	case "darkgreen":
+		return Color{Type: ColorNamed, R: 0, G: 100, B: 0, A: 1}, true
+	case "darkorange":
+		return Color{Type: ColorNamed, R: 255, G: 140, B: 0, A: 1}, true
+	case "darkred":
+		return Color{Type: ColorNamed, R: 139, G: 0, B: 0, A: 1}, true
+	case "darkviolet":
+		return Color{Type: ColorNamed, R: 148, G: 0, B: 211, A: 1}, true
+	case "gold":
+		return Color{Type: ColorNamed, R: 255, G: 215, B: 0, A: 1}, true
+	case "indigo":
+		return Color{Type: ColorNamed, R: 75, G: 0, B: 130, A: 1}, true
+	case "ivory":
+		return Color{Type: ColorNamed, R: 255, G: 255, B: 240, A: 1}, true
+	case "khaki":
+		return Color{Type: ColorNamed, R: 240, G: 230, B: 140, A: 1}, true
+	case "lavender":
+		return Color{Type: ColorNamed, R: 230, G: 230, B: 250, A: 1}, true
+	case "lightblue":
+		return Color{Type: ColorNamed, R: 173, G: 216, B: 230, A: 1}, true
+	case "lightgray", "lightgrey":
+		return Color{Type: ColorNamed, R: 211, G: 211, B: 211, A: 1}, true
+	case "lightgreen":
+		return Color{Type: ColorNamed, R: 144, G: 238, B: 144, A: 1}, true
+	case "lightyellow":
+		return Color{Type: ColorNamed, R: 255, G: 255, B: 224, A: 1}, true
+	case "limegreen":
+		return Color{Type: ColorNamed, R: 50, G: 205, B: 50, A: 1}, true
+	case "magenta":
+		return Color{Type: ColorNamed, R: 255, G: 0, B: 255, A: 1}, true
+	case "peru":
+		return Color{Type: ColorNamed, R: 205, G: 133, B: 63, A: 1}, true
+	case "plum":
+		return Color{Type: ColorNamed, R: 221, G: 160, B: 221, A: 1}, true
+	case "salmon":
+		return Color{Type: ColorNamed, R: 250, G: 128, B: 114, A: 1}, true
+	case "sienna":
+		return Color{Type: ColorNamed, R: 160, G: 82, B: 45, A: 1}, true
+	case "snow":
+		return Color{Type: ColorNamed, R: 255, G: 250, B: 250, A: 1}, true
+	case "tan":
+		return Color{Type: ColorNamed, R: 210, G: 180, B: 140, A: 1}, true
+	case "tomato":
+		return Color{Type: ColorNamed, R: 255, G: 99, B: 71, A: 1}, true
+	case "turquoise":
+		return Color{Type: ColorNamed, R: 64, G: 224, B: 208, A: 1}, true
+	case "violet":
+		return Color{Type: ColorNamed, R: 238, G: 130, B: 238, A: 1}, true
+	case "wheat":
+		return Color{Type: ColorNamed, R: 245, G: 222, B: 179, A: 1}, true
+	}
+	return Color{}, false
 }
