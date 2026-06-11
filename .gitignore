@@ -25,3 +25,6 @@ vendor/
 *.swo
 *~
 .DS_Store
+
+# Teamcode (opencode) internal config
+.teamcode/
