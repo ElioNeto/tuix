@@ -1,0 +1,62 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "god",
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "tools": {},
+  "lsp": true,
+  "command": {
+    "dev": {
+      "description": "Start the development server with live reload",
+      "prompt": "Run the Go application for development with live reload using air or go run ."
+    },
+    "build": {
+      "description": "Build the project for production",
+      "prompt": "Build the Go project. Run 'go build' to produce a binary."
+    },
+    "test": {
+      "description": "Run tests",
+      "prompt": "Run all Go tests with 'go test ./...'. For a specific package, use 'go test ./<path>'."
+    },
+    "lint": {
+      "description": "Run linters and static analysis",
+      "prompt": "Run golangci-lint or 'go vet ./...' on the project."
+    },
+    "tidy": {
+      "description": "Tidy Go modules",
+      "prompt": "Run 'go mod tidy' to clean up dependencies."
+    }
+  },
+  "agent": {
+    "god": {
+      "description": "Omnipotent agent with unrestricted access to all tools and permissions"
+    }
+  },
+  "provider": {
+    "opencode": {
+      "options": {}
+    }
+  },
+  "mcp": {},
+  "permission": {
+    "edit": "allow",
+    "question": "deny",
+    "bash": {
+      "*": "allow"
+    },
+    "external_directory": {
+      "/tmp": "allow",
+      "*": "allow"
+    }
+  },
+  "experimental": {},
+  "tool_output": {
+    "max_lines": 200,
+    "max_bytes": 16384
+  },
+  "compaction": {
+    "auto": true,
+    "tail_turns": 15
+  }
+}
