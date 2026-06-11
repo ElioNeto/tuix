@@ -179,6 +179,11 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 		return
 	}
 
+	// Text boxes have their dimensions set by the parent; skip layout.
+	if box.Type == BoxText {
+		return
+	}
+
 	parentWidth := box.Rect.Width
 	if box.Parent != nil {
 		parentWidth = box.Parent.ContentRect.Width
@@ -196,32 +201,31 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			box.Border.Left - box.Border.Right -
 			box.Padding.Left - box.Padding.Right
 	}
+	if box.ComputedWidth < 0 {
+		box.ComputedWidth = 0
+	}
 
 	// Resolve height
 	box.ComputedHeight = resolveLength(box.Style.Height, e.ViewHeight)
 
-	// Update content rect
-	box.ContentRect.X = int(box.Margin.Left + box.Border.Left + box.Padding.Left)
-	box.ContentRect.Y = int(box.Margin.Top + box.Border.Top + box.Padding.Top)
-	box.ContentRect.Width = int(box.ComputedWidth)
-	box.ContentRect.Height = int(box.ComputedHeight)
-
-	// Update full rect
+	// Update full rect (position will be set by calculatePositions)
 	box.Rect.Width = int(box.TotalWidth())
 	box.Rect.Height = int(box.TotalHeight())
 
-	// Layout children
+	// Content dimensions (position set later by calculatePositions)
+	box.ContentRect.Width = int(box.ComputedWidth)
+	box.ContentRect.Height = int(box.ComputedHeight)
+
+	// Layout children (their positions are relative to this box's Rect)
 	var cursorY float64
 	for _, child := range box.Children {
 		// Inherit parent width for percentage calculations
 		if child.Type == BoxText {
-			// Text content dimensions — 1 character = 1 cell
 			text := child.Node.Data
 
 			// Calculate wrapped text dimensions
 			availableWidth := box.ContentRect.Width
 
-			// Simple word wrapping
 			words := strings.Fields(text)
 			if len(words) == 0 {
 				continue
@@ -234,11 +238,10 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			for _, word := range words {
 				wordWidth := float64(len(word))
 				if currentLineWidth+wordWidth > float64(availableWidth) && currentLineWidth > 0 {
-					// New line
 					totalHeight += 1.0
 					currentLineWidth = wordWidth
 				} else {
-					currentLineWidth += wordWidth + 1.0 // + space
+					currentLineWidth += wordWidth + 1.0
 				}
 				if currentLineWidth > maxLineWidth {
 					maxLineWidth = currentLineWidth
@@ -262,8 +265,11 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
 		}
 
-		child.Rect.X = box.ContentRect.X + int(child.Margin.Left)
-		child.Rect.Y = box.ContentRect.Y + int(cursorY) + int(child.Margin.Top)
+		// Position relative to this box's Rect (top-left of border edge)
+		contentOffsetX := box.Margin.Left + box.Border.Left + box.Padding.Left
+		contentOffsetY := box.Margin.Top + box.Border.Top + box.Padding.Top
+		child.Rect.X = int(contentOffsetX + child.Margin.Left)
+		child.Rect.Y = int(contentOffsetY + cursorY + child.Margin.Top)
 		child.Rect.Width = int(child.ComputedWidth + child.Margin.Left + child.Margin.Right +
 			child.Border.Left + child.Border.Right +
 			child.Padding.Left + child.Padding.Right)
@@ -271,9 +277,8 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			child.Border.Top + child.Border.Bottom +
 			child.Padding.Top + child.Padding.Bottom)
 
-		// Layout children of this child
+		// Layout children of this child (recursive)
 		e.layoutBlock(child)
-		e.calculatePositions(child, float64(child.Rect.X), float64(child.Rect.Y))
 
 		cursorY += float64(child.Rect.Height)
 	}
@@ -284,20 +289,28 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			box.Padding.Top + box.Padding.Bottom +
 			box.Border.Top + box.Border.Bottom
 		box.Rect.Height = int(box.TotalHeight())
-		box.ContentRect.Height = int(box.ComputedHeight - box.Padding.Top - box.Padding.Bottom -
+		box.ContentRect.Height = int(box.ComputedHeight -
+			box.Padding.Top - box.Padding.Bottom -
 			box.Border.Top - box.Border.Bottom)
 	}
 }
 
 // calculatePositions sets the absolute position for a box and its children.
+// box.Rect is relative to parent's Rect; after this call it becomes absolute.
 func (e *LayoutEngine) calculatePositions(box *Box, parentX, parentY float64) {
-	box.Rect.X = int(parentX) + box.Rect.X
-	box.Rect.Y = int(parentY) + box.Rect.Y
+	// Make this box's position absolute
+	box.Rect.X += int(parentX)
+	box.Rect.Y += int(parentY)
+
+	// Content area is now absolute too
 	box.ContentRect.X = box.Rect.X + int(box.Margin.Left+box.Border.Left+box.Padding.Left)
 	box.ContentRect.Y = box.Rect.Y + int(box.Margin.Top+box.Border.Top+box.Padding.Top)
+	box.ContentRect.Width = int(box.ComputedWidth)
+	box.ContentRect.Height = int(box.ComputedHeight)
 
+	// Recurse into children with this box's absolute position
 	for _, child := range box.Children {
-		e.calculatePositions(child, parentX, parentY)
+		e.calculatePositions(child, float64(box.Rect.X), float64(box.Rect.Y))
 	}
 }
 
