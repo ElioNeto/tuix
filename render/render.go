@@ -6,9 +6,11 @@ package render
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/elioneto/tuix/color"
+	"github.com/elioneto/tuix/geometry"
 	"github.com/elioneto/tuix/layout"
 	"github.com/elioneto/tuix/style"
 )
@@ -220,6 +222,7 @@ type Painter struct {
 	colorMode  int
 	fgColor    color.Color
 	bgColor    color.Color
+	clipStack  []geometry.Rect // Stack of clip rectangles for overflow clipping
 }
 
 // NewPainter creates a new painter.
@@ -264,10 +267,207 @@ func (p *Painter) paintBox(box *layout.Box) {
 		p.paintElement(box, fg, bg)
 	}
 
-	// Paint children
-	for _, child := range box.Children {
-		p.paintBox(child)
+	// Check if this box is a scroll container
+	isScrollY := box.Style.OverflowY == style.OverflowScroll || box.Style.OverflowY == style.OverflowAuto
+	isScrollX := box.Style.OverflowX == style.OverflowScroll || box.Style.OverflowX == style.OverflowAuto
+	shouldClipY := isScrollY || box.Style.OverflowY == style.OverflowHidden
+	shouldClipX := isScrollX || box.Style.OverflowX == style.OverflowHidden
+	clip := shouldClipX || shouldClipY
+
+	// Only clip when content actually overflows
+	if clip {
+		contentH := box.ContentRect.Height
+		contentW := box.ContentRect.Width
+		if isScrollY && box.ScrollHeight <= contentH {
+			isScrollY = false
+		}
+		if isScrollX && box.ScrollWidth <= contentW {
+			isScrollX = false
+		}
+		clip = isScrollX || isScrollY
 	}
+
+	if clip {
+		// Push clip rect = content area in canvas coordinates
+		clipRect := geometry.Rect{
+			X:      box.ContentRect.X,
+			Y:      box.ContentRect.Y,
+			Width:  box.ContentRect.Width,
+			Height: box.ContentRect.Height,
+		}
+		p.clipStack = append(p.clipStack, clipRect)
+
+		// Paint children with scroll offset, sorted by z-index
+		children := zSortedChildren(box.Children)
+		for _, child := range children {
+			origX := child.Rect.X
+			origY := child.Rect.Y
+			origCX := child.ContentRect.X
+			origCY := child.ContentRect.Y
+
+			// Apply scroll offset
+			child.Rect.X -= box.ScrollX
+			child.Rect.Y -= box.ScrollY
+			child.ContentRect.X -= box.ScrollX
+			child.ContentRect.Y -= box.ScrollY
+
+			p.paintBox(child)
+
+			// Restore original positions
+			child.Rect.X = origX
+			child.Rect.Y = origY
+			child.ContentRect.X = origCX
+			child.ContentRect.Y = origCY
+		}
+
+		p.clipStack = p.clipStack[:len(p.clipStack)-1]
+
+		// Paint scrollbar indicators
+		if isScrollY && box.ScrollHeight > box.ContentRect.Height {
+			p.paintScrollbarY(box)
+		}
+		if isScrollX && box.ScrollWidth > box.ContentRect.Width {
+			p.paintScrollbarX(box)
+		}
+	} else {
+		// Paint children sorted by z-index (no clipping)
+		for _, child := range zSortedChildren(box.Children) {
+			p.paintBox(child)
+		}
+	}
+}
+
+// zSortedChildren returns a copy of children sorted by ascending ZIndex.
+// Elements with ZIndex == 0 preserve their original relative order (stable sort).
+// Negative ZIndex elements paint first (behind), positive paint last (on top).
+func zSortedChildren(children []*layout.Box) []*layout.Box {
+	// First pass: check if any child has a non-zero ZIndex
+	hasZIndex := false
+	for _, c := range children {
+		if c.ZIndex != 0 {
+			hasZIndex = true
+			break
+		}
+	}
+	if !hasZIndex {
+		return children
+	}
+
+	sorted := make([]*layout.Box, len(children))
+	copy(sorted, children)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].ZIndex < sorted[j].ZIndex
+	})
+	return sorted
+}
+
+// paintScrollbarY paints a vertical scrollbar on the right side of the content area.
+func (p *Painter) paintScrollbarY(box *layout.Box) {
+	contentH := box.ContentRect.Height
+	if contentH <= 0 {
+		return
+	}
+	scrollH := box.ScrollHeight
+	if scrollH <= contentH {
+		return
+	}
+
+	barX := box.ContentRect.X + box.ContentRect.Width - 1
+	if barX < 0 || barX >= p.Canvas.Width {
+		return
+	}
+
+	// Calculate thumb position
+	thumbSize := contentH * contentH / scrollH
+	if thumbSize < 1 {
+		thumbSize = 1
+	}
+	maxScroll := scrollH - contentH
+	if maxScroll <= 0 {
+		return
+	}
+	thumbPos := box.ScrollY * (contentH - thumbSize) / maxScroll
+
+	scrollbarColor := color.NewTrue(80, 80, 80)
+	thumbColor := color.NewTrue(140, 140, 140)
+
+	for y := 0; y < contentH; y++ {
+		cy := box.ContentRect.Y + y
+		if cy < 0 || cy >= p.Canvas.Height {
+			continue
+		}
+
+		if y >= thumbPos && y < thumbPos+thumbSize {
+			p.Canvas.Set(barX, cy, '▓', thumbColor, color.Color{})
+		} else {
+			p.Canvas.Set(barX, cy, '│', scrollbarColor, color.Color{})
+		}
+	}
+}
+
+// paintScrollbarX paints a horizontal scrollbar at the bottom of the content area.
+func (p *Painter) paintScrollbarX(box *layout.Box) {
+	contentW := box.ContentRect.Width
+	if contentW <= 1 {
+		return
+	}
+	scrollW := box.ScrollWidth
+	if scrollW <= contentW {
+		return
+	}
+
+	barY := box.ContentRect.Y + box.ContentRect.Height - 1
+	if barY < 0 || barY >= p.Canvas.Height {
+		return
+	}
+
+	// Calculate thumb position
+	thumbSize := contentW * contentW / scrollW
+	if thumbSize < 1 {
+		thumbSize = 1
+	}
+	maxScroll := scrollW - contentW
+	if maxScroll <= 0 {
+		return
+	}
+	thumbPos := box.ScrollX * (contentW - thumbSize) / maxScroll
+
+	scrollbarColor := color.NewTrue(80, 80, 80)
+	thumbColor := color.NewTrue(140, 140, 140)
+
+	for x := 0; x < contentW; x++ {
+		cx := box.ContentRect.X + x
+		if cx < 0 || cx >= p.Canvas.Width {
+			continue
+		}
+
+		if x >= thumbPos && x < thumbPos+thumbSize {
+			p.Canvas.Set(cx, barY, '▓', thumbColor, color.Color{})
+		} else {
+			p.Canvas.Set(cx, barY, '─', scrollbarColor, color.Color{})
+		}
+	}
+}
+
+// clipRect intersects r with all active clip rects.
+func (p *Painter) clipRect(r geometry.Rect) geometry.Rect {
+	for i := len(p.clipStack) - 1; i >= 0; i-- {
+		r = r.Intersect(p.clipStack[i])
+		if r.IsEmpty() {
+			break
+		}
+	}
+	return r
+}
+
+// isVisible returns true if the point (x, y) is within all clip rects.
+func (p *Painter) isVisible(x, y int) bool {
+	for i := range p.clipStack {
+		if !p.clipStack[i].Contains(x, y) {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *Painter) paintBackground(box *layout.Box, bg color.Color) {
@@ -275,7 +475,11 @@ func (p *Painter) paintBackground(box *layout.Box, bg color.Color) {
 		return
 	}
 
-	rect := box.Rect
+	rect := p.clipRect(box.Rect)
+	if rect.IsEmpty() {
+		return
+	}
+
 	// Clip to canvas
 	if rect.X < 0 {
 		rect.Width += rect.X
@@ -307,6 +511,9 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 	if text == "" {
 		return
 	}
+
+	// Get the clip stack to constrain drawing
+	hasClip := len(p.clipStack) > 0
 
 	// Determine the containing block for alignment.
 	// The text box itself may be narrower than its parent; alignment should
@@ -382,19 +589,30 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 		}
 
 		y := contentY + row
+
+		// Skip this line if it's not visible (check against clip stack)
+		if hasClip && !p.isVisible(startX, y) {
+			wordIndex += len(lineWords)
+			continue
+		}
+
 		currentX := startX
 
 		for i, word := range lineWords {
 			if i > 0 {
 				// Space between words
-				if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
-					p.Canvas.Set(currentX, y, ' ', fg, bg)
+				if !hasClip || p.isVisible(currentX, y) {
+					if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+						p.Canvas.Set(currentX, y, ' ', fg, bg)
+					}
 				}
 				currentX++
 			}
 			for _, ch := range word {
-				if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
-					p.Canvas.Set(currentX, y, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
+				if !hasClip || p.isVisible(currentX, y) {
+					if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+						p.Canvas.Set(currentX, y, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
+					}
 				}
 				currentX++
 			}
@@ -412,10 +630,66 @@ func (p *Painter) paintElement(box *layout.Box, fg, bg color.Color) {
 		box.Style.BorderRight.Style != style.BorderNone {
 		p.paintBorders(box)
 	}
+
+	// Paint focus ring (outline) for focused elements
+	if box.Style.OutlineStyle != style.BorderNone && box.Node != nil && box.Node.HasAttribute("focused") {
+		p.paintFocusRing(box)
+	}
+}
+
+func (p *Painter) paintFocusRing(box *layout.Box) {
+	rect := p.clipRect(box.Rect)
+	if rect.IsEmpty() {
+		return
+	}
+
+	// Use a bright color for the focus ring
+	ringColor := color.NewTrue(0, 212, 170) // Cyan/teal
+
+	top := rect.Y
+	bottom := rect.Y + rect.Height - 1
+	left := rect.X
+	right := rect.X + rect.Width - 1
+
+	// Top and bottom edges
+	for x := left; x <= right; x++ {
+		if x >= 0 && x < p.Canvas.Width && top >= 0 && top < p.Canvas.Height {
+			p.Canvas.Set(x, top, '─', ringColor, color.Color{})
+		}
+		if x >= 0 && x < p.Canvas.Width && bottom >= 0 && bottom < p.Canvas.Height && bottom != top {
+			p.Canvas.Set(x, bottom, '─', ringColor, color.Color{})
+		}
+	}
+	// Left and right edges
+	for y := top; y <= bottom; y++ {
+		if left >= 0 && left < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+			p.Canvas.Set(left, y, '│', ringColor, color.Color{})
+		}
+		if right >= 0 && right < p.Canvas.Width && y >= 0 && y < p.Canvas.Height && right != left {
+			p.Canvas.Set(right, y, '│', ringColor, color.Color{})
+		}
+	}
+	// Corners
+	if left >= 0 && left < p.Canvas.Width && top >= 0 && top < p.Canvas.Height {
+		p.Canvas.Set(left, top, '┌', ringColor, color.Color{})
+	}
+	if right >= 0 && right < p.Canvas.Width && top >= 0 && top < p.Canvas.Height {
+		p.Canvas.Set(right, top, '┐', ringColor, color.Color{})
+	}
+	if left >= 0 && left < p.Canvas.Width && bottom >= 0 && bottom < p.Canvas.Height {
+		p.Canvas.Set(left, bottom, '└', ringColor, color.Color{})
+	}
+	if right >= 0 && right < p.Canvas.Width && bottom >= 0 && bottom < p.Canvas.Height {
+		p.Canvas.Set(right, bottom, '┘', ringColor, color.Color{})
+	}
 }
 
 func (p *Painter) paintBorders(box *layout.Box) {
-	rect := box.Rect
+	rect := p.clipRect(box.Rect)
+	if rect.IsEmpty() {
+		return
+	}
+
 	borderColor := color.NewTrue(100, 100, 100) // Default border color
 
 	if box.Style.BorderTop.Color.Defined {

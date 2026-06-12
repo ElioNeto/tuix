@@ -50,6 +50,17 @@ type Box struct {
 	// Computed dimensions (content area only, not including padding/border/margin)
 	ComputedWidth  float64
 	ComputedHeight float64
+
+	// Scroll offset (0,0 when not scrolled)
+	ScrollX int
+	ScrollY int
+
+	// Total scrollable content dimensions (used for scrollbar max)
+	ScrollWidth  int
+	ScrollHeight int
+
+	// ZIndex for stacking order (0 = auto/DOM order)
+	ZIndex int
 }
 
 // TotalWidth returns the full width including margin, border, and padding.
@@ -137,6 +148,7 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 			Type:      BoxText,
 			Node:      node,
 			Style:     s,
+			ZIndex:    s.ZIndex,
 			Parent:    parent,
 		}
 		return box
@@ -150,6 +162,7 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 		Type:   BoxBlock,
 		Node:   node,
 		Style:  s,
+		ZIndex: s.ZIndex,
 		Parent: parent,
 	}
 
@@ -269,69 +282,49 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 
 	// Layout children (their positions are relative to this box's Rect)
 	var cursorY float64
+
+	// First, check if this box has inline-level children. Inline children
+	// (BoxInline, BoxText) participate in an inline formatting context and
+	// flow into line boxes rather than stacking vertically.
+	hasInline := false
 	for _, child := range box.Children {
-		// Inherit parent width for percentage calculations
-		if child.Type == BoxText {
-			text := child.Node.Data
+		if child.Type == BoxInline || child.Type == BoxText {
+			hasInline = true
+			break
+		}
+	}
 
-			// Calculate wrapped text dimensions
-			availableWidth := box.ContentRect.Width
-
-			words := strings.Fields(text)
-			if len(words) == 0 {
+	if hasInline {
+		// Use inline formatting context for this block's children.
+		// Extract inline runs (consecutive inline/text children) and
+		// lay them out as line boxes.
+		var i int
+		for i < len(box.Children) {
+			// Skip block children — they get stacked vertically as usual.
+			if box.Children[i].Type != BoxInline && box.Children[i].Type != BoxText {
+				// Block child: lay out normally
+				child := box.Children[i]
+				e.layoutBlockChild(child, box, &cursorY)
+				i++
 				continue
 			}
 
-			currentLineWidth := 0.0
-			maxLineWidth := 0.0
-			totalHeight := 1.0
-
-			for _, word := range words {
-				wordWidth := float64(len(word))
-				if currentLineWidth+wordWidth > float64(availableWidth) && currentLineWidth > 0 {
-					totalHeight += 1.0
-					currentLineWidth = wordWidth
-				} else {
-					currentLineWidth += wordWidth + 1.0
-				}
-				if currentLineWidth > maxLineWidth {
-					maxLineWidth = currentLineWidth
-				}
+			// Collect consecutive inline children
+			inlineStart := i
+			for i < len(box.Children) &&
+				(box.Children[i].Type == BoxInline || box.Children[i].Type == BoxText) {
+				i++
 			}
+			inlineGroup := box.Children[inlineStart:i]
 
-			child.ComputedWidth = maxLineWidth
-			child.ComputedHeight = totalHeight
-		} else {
-			child.ComputedWidth = resolveLength(child.Style.Width, box.ComputedWidth)
-			if child.ComputedWidth == 0 {
-				child.ComputedWidth = box.ComputedWidth -
-					child.Margin.Left - child.Margin.Right -
-					child.Border.Left - child.Border.Right -
-					child.Padding.Left - child.Padding.Right
-				if child.ComputedWidth < 0 {
-					child.ComputedWidth = 0
-				}
-			}
-
-			child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
+			// Lay out this inline group
+			e.layoutInline(box, inlineGroup, &cursorY)
 		}
-
-		// Position relative to this box's Rect (border box)
-		// Margins are outside the border box — margin.Left shifts X, margin.Top shifts Y.
-		contentOffsetX := box.Border.Left + box.Padding.Left
-		contentOffsetY := box.Border.Top + box.Padding.Top
-		child.Rect.X = int(contentOffsetX + child.Margin.Left)
-		child.Rect.Y = int(contentOffsetY + cursorY + child.Margin.Top)
-		// Rect.Width/Height is the border box (no margins)
-		child.Rect.Width = int(child.ComputedWidth + child.Border.Left + child.Border.Right +
-			child.Padding.Left + child.Padding.Right)
-		child.Rect.Height = int(child.ComputedHeight + child.Border.Top + child.Border.Bottom +
-			child.Padding.Top + child.Padding.Bottom)
-
-		// Layout children of this child (recursive)
-		e.layoutBox(child)
-
-		cursorY += float64(child.Rect.Height)
+	} else {
+		// Pure block layout: stack children vertically
+		for _, child := range box.Children {
+			e.layoutBlockChild(child, box, &cursorY)
+		}
 	}
 
 	// Update own height based on children if not explicitly set
@@ -343,6 +336,227 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 		box.ContentRect.Height = int(box.ComputedHeight -
 			box.Padding.Top - box.Padding.Bottom -
 			box.Border.Top - box.Border.Bottom)
+	}
+
+	// Compute scrollable content extents
+	box.ScrollWidth = box.ContentRect.Width
+	box.ScrollHeight = int(cursorY) // total height of children in the content area
+	if box.ScrollHeight < box.ContentRect.Height {
+		box.ScrollHeight = box.ContentRect.Height
+	}
+	if box.ScrollWidth < box.ContentRect.Width {
+		box.ScrollWidth = box.ContentRect.Width
+	}
+}
+
+// layoutBlockChild lays out a single block-level child within its parent.
+func (e *LayoutEngine) layoutBlockChild(child *Box, parent *Box, cursorY *float64) {
+	if child.Type == BoxText {
+		text := child.Node.Data
+
+		// Calculate wrapped text dimensions
+		availableWidth := parent.ContentRect.Width
+
+		words := strings.Fields(text)
+		if len(words) == 0 {
+			return
+		}
+
+		currentLineWidth := 0.0
+		maxLineWidth := 0.0
+		totalHeight := 1.0
+
+		for _, word := range words {
+			wordWidth := float64(len(word))
+			if currentLineWidth+wordWidth > float64(availableWidth) && currentLineWidth > 0 {
+				totalHeight += 1.0
+				currentLineWidth = wordWidth
+			} else {
+				currentLineWidth += wordWidth + 1.0
+			}
+			if currentLineWidth > maxLineWidth {
+				maxLineWidth = currentLineWidth
+			}
+		}
+
+		child.ComputedWidth = maxLineWidth
+		child.ComputedHeight = totalHeight
+	} else {
+		child.ComputedWidth = resolveLength(child.Style.Width, parent.ComputedWidth)
+		if child.ComputedWidth == 0 {
+			child.ComputedWidth = parent.ComputedWidth -
+				child.Margin.Left - child.Margin.Right -
+				child.Border.Left - child.Border.Right -
+				child.Padding.Left - child.Padding.Right
+			if child.ComputedWidth < 0 {
+				child.ComputedWidth = 0
+			}
+		}
+
+		child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
+	}
+
+	// Position relative to this box's Rect (border box)
+	// Margins are outside the border box — margin.Left shifts X, margin.Top shifts Y.
+	contentOffsetX := parent.Border.Left + parent.Padding.Left
+	contentOffsetY := parent.Border.Top + parent.Padding.Top
+	child.Rect.X = int(contentOffsetX + child.Margin.Left)
+	child.Rect.Y = int(contentOffsetY + *cursorY + child.Margin.Top)
+	// Rect.Width/Height is the border box (no margins)
+	child.Rect.Width = int(child.ComputedWidth + child.Border.Left + child.Border.Right +
+		child.Padding.Left + child.Padding.Right)
+	child.Rect.Height = int(child.ComputedHeight + child.Border.Top + child.Border.Bottom +
+		child.Padding.Top + child.Padding.Bottom)
+
+	// Layout children of this child (recursive)
+	e.layoutBox(child)
+
+	*cursorY += float64(child.Rect.Height)
+}
+
+// layoutInline performs inline formatting on a group of inline-level children.
+// It generates line boxes and positions each child within them.
+func (e *LayoutEngine) layoutInline(container *Box, inlineChildren []*Box, cursorY *float64) {
+	availableWidth := container.ComputedWidth
+	contentX := container.Border.Left + container.Padding.Left
+
+	// Phase 1: Split inline children into "runs" that fit on lines.
+	type run struct {
+		box       *Box
+		text      string // for text boxes
+		wordWidth float64
+	}
+	var currentLineRuns []*run
+	currentLineWidth := 0.0
+
+	// lineRuns stores all runs grouped by line
+	var lines [][]*run
+	lineHeights := []float64{}
+
+	flushLine := func() {
+		if len(currentLineRuns) > 0 {
+			lines = append(lines, currentLineRuns)
+			// Calculate line height: max of all item heights
+			maxH := 1.0
+			for _, r := range currentLineRuns {
+				h := float64(r.box.Rect.Height)
+				if r.box.ComputedHeight > h {
+					h = r.box.ComputedHeight
+				}
+				if h < 1 {
+					h = 1
+				}
+				if h > maxH {
+					maxH = h
+				}
+			}
+			lineHeights = append(lineHeights, maxH)
+			currentLineRuns = nil
+			currentLineWidth = 0
+		}
+	}
+
+	for _, child := range inlineChildren {
+		if child.Type == BoxInline {
+			// Inline element: determine its content size
+			child.ComputedWidth = resolveLength(child.Style.Width, availableWidth)
+			if child.ComputedWidth == 0 {
+				// For inline elements without explicit width, estimate from content
+				child.ComputedWidth = 1 // minimum
+			}
+			child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
+			if child.ComputedHeight == 0 {
+				child.ComputedHeight = 1
+			}
+
+			// Border-box width
+			bbw := child.ComputedWidth + child.Border.Left + child.Border.Right +
+				child.Padding.Left + child.Padding.Right
+
+			if currentLineWidth+bbw > availableWidth && currentLineWidth > 0 {
+				flushLine()
+			}
+
+			currentLineRuns = append(currentLineRuns, &run{
+				box:       child,
+				wordWidth: bbw,
+			})
+			currentLineWidth += bbw
+		} else if child.Type == BoxText {
+			text := child.Node.Data
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			words := strings.Fields(text)
+
+			for _, word := range words {
+				wordWidth := float64(len(word))
+				needsSpace := currentLineWidth > 0
+				totalWordWidth := wordWidth
+				if needsSpace {
+					totalWordWidth++ // space before word
+				}
+
+				if currentLineWidth+totalWordWidth > availableWidth && currentLineWidth > 0 {
+					flushLine()
+					needsSpace = false
+				}
+
+				if needsSpace {
+					// Add a space run
+					currentLineRuns = append(currentLineRuns, &run{
+						box:       child,
+						text:      " ",
+						wordWidth: 1,
+					})
+					currentLineWidth++
+				}
+
+				currentLineRuns = append(currentLineRuns, &run{
+					box:       child,
+					text:      word,
+					wordWidth: wordWidth,
+				})
+				currentLineWidth += wordWidth
+			}
+		}
+	}
+	flushLine()
+
+	// Phase 2: Position items within each line
+	for li, line := range lines {
+		lineHeight := lineHeights[li]
+		cursorX := 0.0
+
+		for _, r := range line {
+			box := r.box
+
+			// Set position relative to container's content area
+			box.Rect.X = int(contentX + cursorX)
+			box.Rect.Y = int(*cursorY)
+
+			if r.text != "" && box.Type == BoxText {
+				// For text runs, set the box to represent this word
+				box.ComputedWidth = r.wordWidth
+				box.ComputedHeight = lineHeight
+			} else if box.Type == BoxInline {
+				box.ComputedHeight = lineHeight
+			}
+
+			// Border box dimensions
+			box.Rect.Width = int(r.wordWidth)
+			box.Rect.Height = int(lineHeight)
+
+			// Content rect
+			box.ContentRect.X = box.Rect.X + int(box.Border.Left+box.Padding.Left)
+			box.ContentRect.Y = box.Rect.Y + int(box.Border.Top+box.Padding.Top)
+			box.ContentRect.Width = int(box.ComputedWidth)
+			box.ContentRect.Height = int(box.ComputedHeight)
+
+			cursorX += r.wordWidth
+		}
+
+		*cursorY += lineHeight
 	}
 }
 
@@ -819,6 +1033,30 @@ func (e *LayoutEngine) layoutFlex(container *Box) {
 			item.Rect.X = int(contentWidth) - item.Rect.X - item.Rect.Width
 		}
 	}
+
+	// Compute scrollable content extents (relative to content area origin)
+	maxX := 0
+	maxY := 0
+	contentOriginX := container.ContentRect.X
+	contentOriginY := container.ContentRect.Y
+	for _, item := range items {
+		itemEndX := item.Rect.X + item.Rect.Width - contentOriginX
+		itemEndY := item.Rect.Y + item.Rect.Height - contentOriginY
+		if itemEndX > maxX {
+			maxX = itemEndX
+		}
+		if itemEndY > maxY {
+			maxY = itemEndY
+		}
+	}
+	container.ScrollWidth = container.ContentRect.Width
+	container.ScrollHeight = container.ContentRect.Height
+	if maxX > container.ContentRect.Width {
+		container.ScrollWidth = maxX
+	}
+	if maxY > container.ContentRect.Height {
+		container.ScrollHeight = maxY
+	}
 }
 
 // resolveAlignSelf resolves the effective align-self for an item,
@@ -893,4 +1131,46 @@ func (b *Box) FindBoxAtPoint(x, y int) *Box {
 	}
 
 	return b
+}
+
+// FindScrollContainer returns the first scrollable ancestor of a box,
+// or the first scrollable container in the tree if no specific box is given.
+func (b *Box) FindScrollContainer(from *Box) *Box {
+	// If we have a starting box, walk up the tree looking for a scroll container
+	if from != nil {
+		for cur := from; cur != nil; cur = cur.Parent {
+			if cur.ScrollHeight > cur.ContentRect.Height &&
+				(cur.Style.OverflowY == style.OverflowScroll || cur.Style.OverflowY == style.OverflowAuto) {
+				return cur
+			}
+			if cur.ScrollWidth > cur.ContentRect.Width &&
+				(cur.Style.OverflowX == style.OverflowScroll || cur.Style.OverflowX == style.OverflowAuto) {
+				return cur
+			}
+		}
+	}
+
+	// Otherwise, DFS from this box
+	var found *Box
+	b.findScrollDFS(&found)
+	return found
+}
+
+func (b *Box) findScrollDFS(found **Box) {
+	if *found != nil {
+		return
+	}
+	if b.ScrollHeight > b.ContentRect.Height &&
+		(b.Style.OverflowY == style.OverflowScroll || b.Style.OverflowY == style.OverflowAuto) {
+		*found = b
+		return
+	}
+	if b.ScrollWidth > b.ContentRect.Width &&
+		(b.Style.OverflowX == style.OverflowScroll || b.Style.OverflowX == style.OverflowAuto) {
+		*found = b
+		return
+	}
+	for _, child := range b.Children {
+		child.findScrollDFS(found)
+	}
 }

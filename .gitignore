@@ -29,3 +29,7 @@ vendor/
 
 # Teamcode (opencode) internal config
 .teamcode/
+
+# Example binaries (built with `go build ./examples/...`)
+examples/*/main
+examples/*/main.exe

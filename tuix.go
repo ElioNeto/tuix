@@ -13,12 +13,25 @@
 package tuix
 
 import (
+	"strings"
+
 	"github.com/elioneto/tuix/css"
 	"github.com/elioneto/tuix/dom"
 	"github.com/elioneto/tuix/layout"
 	"github.com/elioneto/tuix/render"
 	"github.com/elioneto/tuix/style"
 	"github.com/elioneto/tuix/terminal"
+)
+
+var (
+	// Tags that are focusable form elements
+	focusableTags = map[string]bool{
+		"input":    true,
+		"textarea": true,
+		"select":   true,
+		"button":   true,
+		"a":        true,
+	}
 )
 
 // App is the main application type. Create one with New().
@@ -49,6 +62,37 @@ type App struct {
 
 	// State
 	stylesResolved bool
+
+	// Scroll state saved across re-renders (keyed by *dom.Node)
+	savedScroll map[*dom.Node]struct{ X, Y int }
+
+	// Scroll state
+	scrollContainer *layout.Box // The currently focused scrollable container
+
+	// Form control state
+	formValues  map[*dom.Node]string // Current value/text for each input/textarea/select
+	formCursors map[*dom.Node]int    // Cursor position for inputs/textarea
+	formChecked map[*dom.Node]bool   // Checked state for checkboxes/radios
+
+	// Focus management
+	formFocusables []*dom.Node // Ordered list of focusable DOM nodes
+	formFocused    int         // Index into formFocusables, or -1 if none focused
+
+	// Focus callbacks
+	onFocus func(el *dom.Node) // Called when an element receives focus
+	onBlur  func(el *dom.Node) // Called when an element loses focus
+
+	// Hover state
+	hoveredNode *dom.Node // The DOM node currently under the mouse cursor
+	mouseX      int        // Last known mouse X position
+	mouseY      int        // Last known mouse Y position
+
+	// Modal state
+	modalHTML   string     // Raw HTML for the modal content
+	modalNode   *dom.Node  // Parsed modal container node
+	modalActive bool       // Whether the modal is currently shown
+	onModalOpen func()     // Called when modal opens
+	onModalClose func()    // Called when modal closes
 }
 
 // New creates a new tuix application.
@@ -110,6 +154,125 @@ func (a *App) OnClose(fn func()) {
 	a.onClose = fn
 }
 
+// OnFocus registers a callback called when an element receives focus.
+func (a *App) OnFocus(fn func(el *dom.Node)) {
+	a.onFocus = fn
+}
+
+// OnBlur registers a callback called when an element loses focus.
+func (a *App) OnBlur(fn func(el *dom.Node)) {
+	a.onBlur = fn
+}
+
+// OnHover registers a callback called when the mouse enters an element.
+func (a *App) OnHover(fn func(el *dom.Node)) {
+	// TODO: store callback when needed
+	_ = fn
+}
+
+// HoveredElement returns the DOM node currently under the mouse cursor, or nil.
+func (a *App) HoveredElement() *dom.Node {
+	return a.hoveredNode
+}
+
+// FocusedElement returns the currently focused DOM node, or nil if nothing is focused.
+func (a *App) FocusedElement() *dom.Node {
+	if a.formFocused >= 0 && a.formFocused < len(a.formFocusables) {
+		return a.formFocusables[a.formFocused]
+	}
+	return nil
+}
+
+// FocusElement sets focus to the given DOM node.
+// If the node is not in the focusables list, focus is cleared.
+func (a *App) FocusElement(node *dom.Node) {
+	a.focusNode(node)
+	a.renderFrame()
+}
+
+// Blur removes focus from the currently focused element.
+func (a *App) Blur() {
+	if a.formFocused >= 0 {
+		a.focusByIndex(-1)
+		a.renderFrame()
+	}
+}
+
+// ShowModal shows a modal dialog with the given HTML content.
+// The modal is rendered as an overlay with backdrop and centered content.
+// Escape closes the modal; Tab focus is trapped within modal elements.
+// If a modal is already active, it is replaced.
+func (a *App) ShowModal(html string) {
+	// Clean up any existing modal state
+	if a.modalActive && a.modalNode != nil {
+		a.cleanFormState(a.modalNode)
+	}
+
+	a.modalHTML = html
+	a.modalActive = true
+
+	// Parse modal HTML
+	parser := dom.NewParser(`<div class="modal-wrapper">` + html + `</div>`)
+	a.modalNode = parser.Parse()
+
+	// Initialize form state for modal elements
+	a.initFormState(a.modalNode)
+
+	// Rebuild focusables: when modal is active, only elements within the modal are focusable
+	a.buildModalFocusables()
+
+	if a.onModalOpen != nil {
+		a.onModalOpen()
+	}
+	a.renderFrame()
+}
+
+// CloseModal closes the currently open modal dialog.
+func (a *App) CloseModal() {
+	a.modalActive = false
+
+	// Clean up form state for modal elements
+	if a.modalNode != nil {
+		a.cleanFormState(a.modalNode)
+	}
+
+	a.modalNode = nil
+
+	// Rebuild focusables to include all focusable elements in the document
+	a.initFormState(a.document)
+	a.formFocused = -1
+	a.renderFrame()
+	if a.onModalClose != nil {
+		a.onModalClose()
+	}
+}
+
+// buildModalFocusables collects focusable elements within the modal node only.
+func (a *App) buildModalFocusables() {
+	a.formFocusables = nil
+	a.formFocused = -1
+	if a.modalNode == nil {
+		return
+	}
+	for _, child := range a.modalNode.Children {
+		a.collectFocusables(child)
+	}
+	// Auto-focus the first focusable element in the modal
+	if len(a.formFocusables) > 0 {
+		a.focusByIndex(0)
+	}
+}
+
+// OnModalOpen registers a callback called when a modal is opened.
+func (a *App) OnModalOpen(fn func()) {
+	a.onModalOpen = fn
+}
+
+// OnModalClose registers a callback called when a modal is closed.
+func (a *App) OnModalClose(fn func()) {
+	a.onModalClose = fn
+}
+
 // Run starts the application's main loop.
 // It opens the terminal in raw mode, parses HTML/CSS, and enters the event loop.
 func (a *App) Run() error {
@@ -146,6 +309,10 @@ func (a *App) Run() error {
 	} else {
 		a.stylesheet = &css.Stylesheet{}
 	}
+
+	// Initialize form state by scanning the DOM
+	a.initFormState(a.document)
+	a.buildFocusables(a.document)
 
 	// Create canvas
 	a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
@@ -239,6 +406,11 @@ func (a *App) handleEvent(event terminal.Event) {
 		a.onEvent(event)
 	}
 
+	// Let form controls handle the event first (they consume it if focused)
+	if a.handleFormEvent(event) {
+		return
+	}
+
 	switch event.Type {
 	case terminal.EventKey:
 		if event.Key == terminal.KeyRune {
@@ -250,10 +422,19 @@ func (a *App) handleEvent(event terminal.Event) {
 			a.onKey(event.Key)
 		}
 
+		// Handle Escape — close modal if active
+		if event.Key == terminal.KeyEscape && a.modalActive {
+			a.CloseModal()
+			return
+		}
+
 		// Handle Ctrl+C / Ctrl+D to quit
 		if event.Key == terminal.KeyCtrlC || event.Key == terminal.KeyCtrlD {
 			a.Stop()
 		}
+
+		// Handle scrolling
+		a.handleScrollKey(event.Key)
 
 	case terminal.EventResize:
 		a.width = event.Width
@@ -266,9 +447,181 @@ func (a *App) handleEvent(event terminal.Event) {
 		}
 
 	case terminal.EventMouse:
+		// Store mouse position for hover tracking
+		a.mouseX = event.MouseX
+		a.mouseY = event.MouseY
+
+		// Mouse click — focus the element under the cursor
+		if event.MouseButton == terminal.MouseLeft && a.rootBox != nil {
+			target := a.rootBox.FindBoxAtPoint(event.MouseX, event.MouseY)
+
+			// When modal is active, only interact with modal elements
+			if a.modalActive {
+				// Check if click is within the modal wrapper
+				if target != nil && target.Node != nil {
+					if a.isNodeInModal(target.Node) {
+						a.focusNode(target.Node)
+						a.renderFrame()
+					}
+					// Clicks on background (backdrop) are ignored — keeps focus trapped
+				}
+			} else {
+				if target != nil && target.Node != nil {
+					a.focusNode(target.Node)
+				} else {
+					a.formFocused = -1
+				}
+				a.renderFrame()
+			}
+		}
+
+		// Mouse wheel scrolling
+		if event.MouseButton == terminal.MouseWheelUp || event.MouseButton == terminal.MouseWheelDown {
+			a.handleMouseWheel(event)
+		}
+
+		// Mouse move / drag — update hover state
+		if event.MouseButton == terminal.MouseNone {
+			// Pure mouse move — recompute hovered element
+			oldHovered := a.hoveredNode
+			if a.rootBox != nil {
+				target := a.rootBox.FindBoxAtPoint(event.MouseX, event.MouseY)
+				if target != nil && target.Node != nil {
+					a.hoveredNode = target.Node
+				} else {
+					a.hoveredNode = nil
+				}
+			} else {
+				a.hoveredNode = nil
+			}
+			// Re-render if hover state changed
+			if oldHovered != a.hoveredNode {
+				a.renderFrame()
+			}
+		}
+
 		if a.onMouse != nil {
 			a.onMouse(event.MouseButton, event.MouseX, event.MouseY)
 		}
+	}
+}
+
+// handleScrollKey processes keyboard-based scrolling.
+func (a *App) handleScrollKey(key terminal.Key) {
+	if a.rootBox == nil || a.modalActive {
+		return
+	}
+
+	// Find a scroll container to scroll
+	sc := a.scrollContainer
+	if sc == nil {
+		sc = a.rootBox.FindScrollContainer(nil)
+	}
+	if sc == nil || sc.ScrollHeight <= sc.ContentRect.Height {
+		return
+	}
+
+	maxY := sc.ScrollHeight - sc.ContentRect.Height
+	maxX := sc.ScrollWidth - sc.ContentRect.Width
+	oldY := sc.ScrollY
+	oldX := sc.ScrollX
+
+	switch key {
+	case terminal.KeyUp:
+		sc.ScrollY--
+	case terminal.KeyDown:
+		sc.ScrollY++
+	case terminal.KeyPageUp:
+		sc.ScrollY -= sc.ContentRect.Height
+	case terminal.KeyPageDown:
+		sc.ScrollY += sc.ContentRect.Height
+	case terminal.KeyHome:
+		if sc.ScrollX > 0 {
+			sc.ScrollX = 0
+		} else {
+			sc.ScrollY = 0
+		}
+	case terminal.KeyEnd:
+		if sc.ScrollX > 0 {
+			sc.ScrollX = maxX
+		} else {
+			sc.ScrollY = maxY
+		}
+	case terminal.KeyLeft:
+		if sc.ScrollWidth > sc.ContentRect.Width {
+			sc.ScrollX--
+		}
+	case terminal.KeyRight:
+		if sc.ScrollWidth > sc.ContentRect.Width {
+			sc.ScrollX++
+		}
+	default:
+		return // No scroll action needed
+	}
+
+	// Clamp values
+	if sc.ScrollY < 0 {
+		sc.ScrollY = 0
+	}
+	if sc.ScrollY > maxY {
+		sc.ScrollY = maxY
+	}
+	if sc.ScrollX < 0 {
+		sc.ScrollX = 0
+	}
+	if sc.ScrollX > maxX {
+		sc.ScrollX = maxX
+	}
+
+	if sc.ScrollY != oldY || sc.ScrollX != oldX {
+		a.scrollContainer = sc
+		a.renderFrame()
+	}
+}
+
+// handleMouseWheel processes mouse wheel scroll events.
+func (a *App) handleMouseWheel(event terminal.Event) {
+	if a.rootBox == nil {
+		return
+	}
+
+	// When modal is active, prevent background scrolling
+	if a.modalActive {
+		return
+	}
+
+	// Find the box under the mouse cursor
+	target := a.rootBox.FindBoxAtPoint(event.MouseX, event.MouseY)
+	if target == nil {
+		return
+	}
+
+	// Find scroll container ancestor for this target
+	sc := a.rootBox.FindScrollContainer(target)
+	if sc == nil {
+		return
+	}
+
+	maxY := sc.ScrollHeight - sc.ContentRect.Height
+	oldY := sc.ScrollY
+
+	switch event.MouseButton {
+	case terminal.MouseWheelUp:
+		sc.ScrollY -= 3
+	case terminal.MouseWheelDown:
+		sc.ScrollY += 3
+	}
+
+	if sc.ScrollY < 0 {
+		sc.ScrollY = 0
+	}
+	if sc.ScrollY > maxY {
+		sc.ScrollY = maxY
+	}
+
+	if sc.ScrollY != oldY {
+		a.scrollContainer = sc
+		a.renderFrame()
 	}
 }
 
@@ -280,16 +633,48 @@ func (a *App) renderFrame() {
 		return
 	}
 
+	// Graft modal node into the document if active
+	var modalParent *dom.Node
+	if a.modalActive && a.modalNode != nil {
+		// Attach modal as a child of the document
+		// Find the first suitable parent (document itself or first element child)
+		for _, child := range a.document.Children {
+			if child.Type == dom.NodeElement {
+				child.Children = append(child.Children, a.modalNode)
+				a.modalNode.Parent = child
+				modalParent = child
+				break
+			}
+		}
+	}
+
+	// Save scroll offsets from the old box tree (keyed by *dom.Node)
+	if a.rootBox != nil {
+		a.saveScrollOffsets(a.rootBox)
+	}
+
+	// Prepare DOM for form controls (sets text children, focused attributes)
+	a.prepareFormDOM(a.document)
+
 	// Resolve styles for all nodes
 	styles := a.resolveStyles()
 
 	// Perform layout
 	a.rootBox = a.layout.Layout(a.document, styles)
 
+	// Restore scroll offsets on the new box tree
+	a.restoreScrollOffsets(a.rootBox)
+
 	// Paint the layout onto a fresh canvas
 	a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
 	a.painter = render.NewPainter(a.canvas, a.terminal.ColorMode())
 	a.painter.Paint(a.rootBox)
+
+	// Detach modal node if it was attached
+	if modalParent != nil {
+		modalParent.Children = removeFromSlice(modalParent.Children, a.modalNode)
+		a.modalNode.Parent = nil
+	}
 
 	// Call render callback
 	if a.onRender != nil {
@@ -299,6 +684,38 @@ func (a *App) renderFrame() {
 	// Full render (pass nil to always output everything)
 	output := a.canvas.Render(nil)
 	a.terminal.WriteString(output)
+}
+
+// saveScrollOffsets walks the box tree and saves scroll offsets.
+func (a *App) saveScrollOffsets(box *layout.Box) {
+	if box == nil {
+		return
+	}
+	if box.Node != nil && (box.ScrollX != 0 || box.ScrollY != 0) {
+		if a.savedScroll == nil {
+			a.savedScroll = make(map[*dom.Node]struct{ X, Y int })
+		}
+		a.savedScroll[box.Node] = struct{ X, Y int }{X: box.ScrollX, Y: box.ScrollY}
+	}
+	for _, child := range box.Children {
+		a.saveScrollOffsets(child)
+	}
+}
+
+// restoreScrollOffsets walks the new box tree and restores saved scroll offsets.
+func (a *App) restoreScrollOffsets(box *layout.Box) {
+	if box == nil {
+		return
+	}
+	if box.Node != nil && a.savedScroll != nil {
+		if saved, ok := a.savedScroll[box.Node]; ok {
+			box.ScrollX = saved.X
+			box.ScrollY = saved.Y
+		}
+	}
+	for _, child := range box.Children {
+		a.restoreScrollOffsets(child)
+	}
 }
 
 // resolveStyles walks the DOM tree and resolves styles for each node.
@@ -322,4 +739,617 @@ func (a *App) resolveNodeStyles(node *dom.Node, resolver *style.Resolver,
 	for _, child := range node.Children {
 		a.resolveNodeStyles(child, resolver, styles)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Form control state management
+// ---------------------------------------------------------------------------
+
+// initFormState scans the DOM tree and initializes form control state.
+func (a *App) initFormState(node *dom.Node) {
+	if node == nil || node.Type != dom.NodeElement {
+		return
+	}
+
+	if a.formValues == nil {
+		a.formValues = make(map[*dom.Node]string)
+		a.formCursors = make(map[*dom.Node]int)
+		a.formChecked = make(map[*dom.Node]bool)
+	}
+
+	tag := strings.ToLower(node.Data)
+	switch tag {
+	case "input":
+		inputType := strings.ToLower(node.GetAttribute("type"))
+		// Initialize value from attribute
+		if val := node.GetAttribute("value"); val != "" {
+			a.formValues[node] = val
+		}
+		// Initialize checked state
+		if inputType == "checkbox" || inputType == "radio" {
+			if node.HasAttribute("checked") {
+				a.formChecked[node] = true
+			}
+		}
+		// Register as focusable
+		focusableTags[node.Data] = true // ensure input is in the set
+
+	case "textarea":
+		// Initialize value from text content
+		for _, child := range node.Children {
+			if child.Type == dom.NodeText {
+				a.formValues[node] = child.Data
+				break
+			}
+		}
+
+	case "select":
+		// Find initially selected option
+		for _, child := range node.Children {
+			if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+				if child.HasAttribute("selected") || a.formValues[node] == "" {
+					// Use option's text content
+					for _, textChild := range child.Children {
+						if textChild.Type == dom.NodeText {
+							a.formValues[node] = textChild.Data
+							break
+						}
+					}
+				}
+				if child.HasAttribute("selected") {
+					break
+				}
+			}
+		}
+
+	case "option":
+		// Ensure default text is set
+		if a.formValues[node] == "" {
+			for _, child := range node.Children {
+				if child.Type == dom.NodeText {
+					a.formValues[node] = child.Data
+					break
+				}
+			}
+		}
+
+	default:
+		// Check if this is a focusable tag not already handled
+		if focusableTags[tag] && a.formValues[node] == "" {
+			// For buttons and links, initialize with their text content
+			for _, child := range node.Children {
+				if child.Type == dom.NodeText {
+					a.formValues[node] = child.Data
+					break
+				}
+			}
+		}
+	}
+
+	// Recurse into children
+	for _, child := range node.Children {
+		a.initFormState(child)
+	}
+}
+
+// cleanFormState removes form state entries for a subtree of nodes.
+func (a *App) cleanFormState(node *dom.Node) {
+	if node == nil || node.Type != dom.NodeElement {
+		return
+	}
+	delete(a.formValues, node)
+	delete(a.formCursors, node)
+	delete(a.formChecked, node)
+	for _, child := range node.Children {
+		a.cleanFormState(child)
+	}
+}
+
+// prepareFormDOM updates DOM children for form elements to reflect current state.
+// This is called before each layout pass so that layout sees the correct content.
+func (a *App) prepareFormDOM(node *dom.Node) {
+	if node == nil || node.Type != dom.NodeElement {
+		return
+	}
+
+	tag := strings.ToLower(node.Data)
+
+	// Apply/remove 'focused' attribute for CSS styling
+	if a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node {
+		node.SetAttribute("focused", "")
+	} else {
+		// Remove 'focused' attribute if it was set
+		delete(node.Attributes, "focused")
+	}
+
+	// Apply/remove 'hovered' attribute for CSS :hover matching
+	// :hover matches the hovered element and all its ancestors
+	if a.hoveredNode != nil && nodeHasOrIsAncestor(node, a.hoveredNode) {
+		node.SetAttribute("hovered", "")
+	} else {
+		delete(node.Attributes, "hovered")
+	}
+
+	switch tag {
+	case "input":
+		inputType := strings.ToLower(node.GetAttribute("type"))
+		switch inputType {
+		case "checkbox":
+			text := "[ ]"
+			if a.formChecked[node] {
+				text = "[x]"
+			}
+			a.setInputTextChild(node, text)
+		case "radio":
+			text := "( )"
+			if a.formChecked[node] {
+				text = "(*) "
+			}
+			a.setInputTextChild(node, text)
+		default: // text, password, email, search, number, etc.
+			val := a.formValues[node]
+			isPassword := inputType == "password"
+
+			// Mask password values
+			if isPassword && val != "" {
+				val = strings.Repeat("•", len([]rune(val)))
+			}
+
+			if val == "" {
+				val = node.GetAttribute("placeholder")
+				if val == "" {
+					val = ""
+				}
+			}
+			// Show value with cursor if focused
+			if a.formFocused >= 0 && a.formFocused < len(a.formFocusables) &&
+				a.formFocusables[a.formFocused] == node {
+				runes := []rune(val)
+				cursor := a.formCursors[node]
+				if cursor < 0 {
+					cursor = 0
+				}
+				if cursor > len(runes) {
+					cursor = len(runes)
+				}
+				// Insert cursor character
+				display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
+				a.setInputTextChild(node, display)
+			} else {
+				a.setInputTextChild(node, val)
+			}
+		}
+
+	case "textarea":
+		val := a.formValues[node]
+		if val == "" {
+			val = node.GetAttribute("placeholder")
+		}
+		a.setTextareaText(node, val)
+
+	case "select":
+		selected := a.formValues[node]
+		if selected == "" {
+			// Find first option text
+			for _, child := range node.Children {
+				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+					for _, textChild := range child.Children {
+						if textChild.Type == dom.NodeText {
+							selected = textChild.Data
+							break
+						}
+					}
+					if selected != "" {
+						break
+					}
+				}
+			}
+		}
+		a.setInputTextChild(node, " "+selected+" ")
+
+	case "button", "a":
+		// These already have text children — just ensure focused styling
+		// Nothing to do here for content
+	}
+
+	// Recurse into children
+	for _, child := range node.Children {
+		a.prepareFormDOM(child)
+	}
+}
+
+// setInputTextChild sets or replaces the text child of a node (for void elements like input).
+func (a *App) setInputTextChild(node *dom.Node, text string) {
+	// Find existing text child
+	for _, child := range node.Children {
+		if child.Type == dom.NodeText {
+			child.Data = text
+			return
+		}
+	}
+	// No text child exists — create one
+	textNode := &dom.Node{
+		Type: dom.NodeText,
+		Data: text,
+		Parent: node,
+	}
+	node.Children = append(node.Children, textNode)
+}
+
+// setTextareaText updates the text content of a textarea.
+func (a *App) setTextareaText(node *dom.Node, text string) {
+	// Replace all children with a single text node
+	node.Children = nil
+	textNode := &dom.Node{
+		Type: dom.NodeText,
+		Data: text,
+		Parent: node,
+	}
+	node.Children = append(node.Children, textNode)
+}
+
+// buildFocusables scans the DOM and builds an ordered list of focusable elements.
+func (a *App) buildFocusables(node *dom.Node) {
+	a.formFocusables = nil
+	a.formFocused = -1
+	a.collectFocusables(node)
+	// Auto-focus: check for element with autofocus attribute
+	for i, n := range a.formFocusables {
+		if n.HasAttribute("autofocus") {
+			a.focusByIndex(i)
+			return
+		}
+	}
+	// If no autofocus found, check if any element already has focused attribute
+	for i, n := range a.formFocusables {
+		if n.HasAttribute("focused") {
+			a.focusByIndex(i)
+			return
+		}
+	}
+}
+
+func (a *App) collectFocusables(node *dom.Node) {
+	if node == nil || node.Type != dom.NodeElement {
+		return
+	}
+
+	tag := strings.ToLower(node.Data)
+	isFocusableTag := focusableTags[tag]
+	hasTabIndex := node.HasAttribute("tabindex")
+
+	if isFocusableTag || hasTabIndex {
+		disabled := node.HasAttribute("disabled")
+		if !disabled {
+			tabindexStr := node.GetAttribute("tabindex")
+			ti := parseTabIndex(tabindexStr)
+			// tabindex < 0 means programmatically focusable only (not tab-navigable)
+			if ti >= 0 {
+				a.formFocusables = append(a.formFocusables, node)
+			} else if isFocusableTag {
+				// For focusable tags, tabindex="-1" makes them programmatically
+				// focusable but NOT tab-navigable. We track them separately.
+				// For now, simply don't add to focusables so Tab skips them.
+			}
+		}
+	}
+
+	// Recurse into children
+	for _, child := range node.Children {
+		a.collectFocusables(child)
+	}
+}
+
+// handleFormEvent processes keyboard events for focused form controls.
+// Returns true if the event was consumed by a form control.
+func (a *App) handleFormEvent(event terminal.Event) bool {
+	if event.Type != terminal.EventKey {
+		return false
+	}
+
+	// Handle Tab key (focus navigation) even when nothing is focused
+	if event.Key == terminal.KeyTab && len(a.formFocusables) > 0 {
+		var nextIdx int
+		if a.formFocused < 0 {
+			nextIdx = 0
+		} else {
+			dir := 1
+			if event.Modifiers&terminal.ModShift != 0 {
+				dir = -1
+			}
+			nextIdx = a.formFocused + dir
+			if nextIdx < 0 {
+				nextIdx = len(a.formFocusables) - 1
+			} else if nextIdx >= len(a.formFocusables) {
+				nextIdx = 0
+			}
+		}
+		a.focusByIndex(nextIdx)
+		a.renderFrame()
+		return true
+	}
+
+	// If nothing is focused, don't consume the event
+	if a.formFocused < 0 || a.formFocused >= len(a.formFocusables) {
+		return false
+	}
+
+	focused := a.formFocusables[a.formFocused]
+	tag := strings.ToLower(focused.Data)
+
+	// Handle element-specific interactions
+	switch tag {
+	case "input":
+		inputType := strings.ToLower(focused.GetAttribute("type"))
+		switch inputType {
+		case "checkbox":
+			if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
+				a.formChecked[focused] = !a.formChecked[focused]
+				a.renderFrame()
+				return true
+			}
+		case "radio":
+			if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
+				a.checkRadio(focused)
+				a.renderFrame()
+				return true
+			}
+		default: // text, password, email, search, etc.
+			return a.handleTextEdit(event, focused)
+		}
+
+	case "textarea":
+		return a.handleTextEdit(event, focused)
+
+	case "select":
+		if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
+			a.cycleSelectOption(focused)
+			a.renderFrame()
+			return true
+		}
+
+	case "button":
+		if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
+			// Button activation — for now, just visual feedback
+			a.renderFrame()
+			return true
+		}
+
+	case "a":
+		// Links are focusable but have no special form handling yet
+		return false
+	}
+
+	return false
+}
+
+// handleTextEdit processes keyboard input for text fields.
+// Returns true if the event was consumed.
+func (a *App) handleTextEdit(event terminal.Event, node *dom.Node) bool {
+	val := []rune(a.formValues[node])
+	cursor := a.formCursors[node]
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(val) {
+		cursor = len(val)
+	}
+
+	switch event.Key {
+	case terminal.KeyLeft:
+		if cursor > 0 {
+			a.formCursors[node] = cursor - 1
+			a.renderFrame()
+		}
+		return true
+
+	case terminal.KeyRight:
+		if cursor < len(val) {
+			a.formCursors[node] = cursor + 1
+			a.renderFrame()
+		}
+		return true
+
+	case terminal.KeyHome:
+		a.formCursors[node] = 0
+		a.renderFrame()
+		return true
+
+	case terminal.KeyEnd:
+		a.formCursors[node] = len(val)
+		a.renderFrame()
+		return true
+
+	case terminal.KeyBackspace:
+		if cursor > 0 {
+			val = append(val[:cursor-1], val[cursor:]...)
+			a.formValues[node] = string(val)
+			a.formCursors[node] = cursor - 1
+			a.renderFrame()
+		}
+		return true
+
+	case terminal.KeyDelete:
+		if cursor < len(val) {
+			val = append(val[:cursor], val[cursor+1:]...)
+			a.formValues[node] = string(val)
+			a.renderFrame()
+		}
+		return true
+
+	case terminal.KeyEnter:
+		// Enter in a text field — stay focused or submit
+		return false
+
+	case terminal.KeyEscape:
+		// Escape — lose focus
+		a.formFocused = -1
+		a.renderFrame()
+		return true
+
+	default:
+		// Typing a character
+		if event.Key == terminal.KeyRune {
+			r := event.Rune
+			// Ignore control characters
+			if r < 0x20 {
+				return false
+			}
+			newRunes := make([]rune, 0, len(val)+1)
+			newRunes = append(newRunes, val[:cursor]...)
+			newRunes = append(newRunes, r)
+			newRunes = append(newRunes, val[cursor:]...)
+			a.formValues[node] = string(newRunes)
+			a.formCursors[node] = cursor + 1
+			a.renderFrame()
+			return true
+		}
+	}
+
+	return false
+}
+
+// focusNode finds the given node in formFocusables and sets focus to it.
+func (a *App) focusNode(node *dom.Node) {
+	if node == nil {
+		a.focusByIndex(-1)
+		return
+	}
+	for i, n := range a.formFocusables {
+		if n == node {
+			a.focusByIndex(i)
+			return
+		}
+	}
+	// Node not found in focusables — walk up to find a focusable ancestor
+	for p := node.Parent; p != nil; p = p.Parent {
+		for i, n := range a.formFocusables {
+			if n == p {
+				a.focusByIndex(i)
+				return
+			}
+		}
+	}
+	a.focusByIndex(-1)
+}
+
+// focusByIndex sets focus to the element at the given index.
+// Pass -1 to clear focus.
+func (a *App) focusByIndex(idx int) {
+	old := a.formFocused
+	if old >= 0 && old < len(a.formFocusables) && a.onBlur != nil {
+		a.onBlur(a.formFocusables[old])
+	}
+	a.formFocused = idx
+	if idx >= 0 && idx < len(a.formFocusables) && a.onFocus != nil {
+		a.onFocus(a.formFocusables[idx])
+	}
+}
+
+// checkRadio toggles a radio button and unchecks others in the same group.
+func (a *App) checkRadio(node *dom.Node) {
+	name := node.GetAttribute("name")
+	a.formChecked[node] = true
+	if name != "" {
+		// Uncheck all other radios with the same name
+		for _, focusable := range a.formFocusables {
+			if focusable != node &&
+				strings.ToLower(focusable.Data) == "input" &&
+				strings.ToLower(focusable.GetAttribute("type")) == "radio" &&
+				focusable.GetAttribute("name") == name {
+				a.formChecked[focusable] = false
+			}
+		}
+	}
+}
+
+// cycleSelectOption moves to the next option in a select element.
+func (a *App) cycleSelectOption(node *dom.Node) {
+	options := make([]string, 0)
+	for _, child := range node.Children {
+		if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+			for _, textChild := range child.Children {
+				if textChild.Type == dom.NodeText {
+					options = append(options, textChild.Data)
+					break
+				}
+			}
+		}
+	}
+	if len(options) == 0 {
+		return
+	}
+
+	current := a.formValues[node]
+	for i, opt := range options {
+		if opt == current {
+			next := (i + 1) % len(options)
+			a.formValues[node] = options[next]
+			return
+		}
+	}
+	// Current value not found — set to first option
+	a.formValues[node] = options[0]
+}
+
+// parseTabIndex parses a tabindex attribute value string and returns the integer value.
+// Returns 0 if the string is empty or unparseable.
+func parseTabIndex(s string) int {
+	if s == "" {
+		return 0
+	}
+	neg := false
+	start := 0
+	if s[0] == '-' {
+		neg = true
+		start = 1
+	} else if s[0] == '+' {
+		start = 1
+	}
+	n := 0
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			return 0 // invalid, treat as 0
+		}
+	}
+	if neg {
+		return -n
+	}
+	return n
+}
+
+// nodeHasOrIsAncestor returns true if 'node' is 'target' or an ancestor of 'target'.
+func nodeHasOrIsAncestor(node, target *dom.Node) bool {
+	for p := target; p != nil; p = p.Parent {
+		if p == node {
+			return true
+		}
+	}
+	return false
+}
+
+// removeFromSlice removes the first occurrence of target from slice and returns the new slice.
+func removeFromSlice(slice []*dom.Node, target *dom.Node) []*dom.Node {
+	for i, n := range slice {
+		if n == target {
+			return append(slice[:i], slice[i+1:]...)
+		}
+	}
+	return slice
+}
+
+// isNodeInModal returns true if the given node is a descendant of the modal wrapper.
+func (a *App) isNodeInModal(node *dom.Node) bool {
+	if a.modalNode == nil || node == nil {
+		return false
+	}
+	for p := node; p != nil; p = p.Parent {
+		if p == a.modalNode {
+			return true
+		}
+	}
+	return false
 }

@@ -8,7 +8,12 @@ Tuix is a zero-dependency Go library for creating TUI (Terminal User Interface) 
 
 - **HTML-based UI** — Define structure with HTML tags, attributes, classes, and IDs
 - **CSS styling** — Style with CSS selectors, properties, cascade, and specificity
-- **Block layout engine** — Box model with margin, border, padding (inline/flex coming soon)
+- **Block layout engine** — Box model with margin, border, padding
+- **Flexbox layout** — `display: flex` with `flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `flex-grow/shrink/basis`, `gap`, `order`
+- **Inline formatting** — Inline elements (`span`, `a`, `strong`, `em`, etc.) flow within text lines
+- **Scrolling & overflow** — `overflow: scroll/auto/hidden` with scrollbar, keyboard and mouse wheel scrolling
+- **Interactive form controls** — Text input, checkboxes, radio buttons, textarea, select dropdowns, buttons with Tab navigation and focus
+- **ASCII art text generation** — Built-in FIGlet font support: Graffiti, Standard, Big, Block, Shadow (and any `.flf` font you load)
 - **24-bit true color** — Hex, RGB, named, ANSI 16/256 color support
 - **Keyboard & mouse input** — Full event handling with modifiers
 - **Text alignment** — Left, center, right
@@ -106,6 +111,10 @@ Press `q` to quit. The terminal will enter the alternate screen buffer and resto
 ```
 tuix/
 ├── tuix.go              # Public API — App struct, event loop, callbacks
+├── ascii/
+│   ├── ascii.go         # Generate(), Render(), Font type, Must helper
+│   ├── font.go          # FIGlet font parser (.flf format)
+│   └── data.go          # Built-in fonts (Graffiti, Standard, Big, Block, Shadow)
 ├── dom/
 │   └── dom.go           # HTML parser, DOM tree (Node, Element, Text)
 ├── css/
@@ -158,9 +167,9 @@ Tuix parses a subset of HTML. Tags, attributes, classes, and IDs work as expecte
 </div>
 ```
 
-- **Tags**: `div`, `h1`..`h6`, `p`, `span`, `button`, `a`, `ul`, `li`, `header`, `footer`, `section`, `main`, `article`, `aside`, `nav`, `label`, `input`, `textarea`, `select`, `option`, `table`, `tr`, `td`, `th`, `img`, `br`, `hr`, `strong`, `em`, `b`, `i`, `u`, `code`, `pre`, `blockquote`, `cite`
-- **Attributes**: `id`, `class`, `style` (not yet processed)
-- **Self-closing tags**: `br`, `hr`, `img`, `input`
+- **Tags**: `div`, `h1`..`h6`, `p`, `span`, `button`, `a`, `ul`, `ol`, `li`, `header`, `footer`, `section`, `main`, `article`, `aside`, `nav`, `label`, `input`, `textarea`, `select`, `option`, `table`, `tr`, `td`, `th`, `img`, `br`, `hr`, `strong`, `em`, `b`, `i`, `u`, `code`, `pre`, `blockquote`, `cite`
+- **Attributes**: `id`, `class`, `style`, `type`, `name`, `value`, `placeholder`, `disabled`, `checked`
+- **Self-closing tags**: `br`, `hr`, `img`, `input`, `meta`
 - **Text nodes**: Content between tags is parsed as text
 
 ---
@@ -210,6 +219,23 @@ Tuix parses a subset of HTML. Tags, attributes, classes, and IDs work as expecte
 | `z-index` | `<integer>` | ❌ |
 | `visibility` | `visible`, `hidden`, `collapse` | ✅ |
 | `cursor` | `auto`, `default`, `pointer`, `text`, `none`, `help` | ✅ |
+| `outline`, `outline-style` | `none`, `solid` | ❌ |
+
+#### Flexbox
+
+| Property | Values | Applies to |
+|---|---|---|
+| `flex-direction` | `row`, `column`, `row-reverse`, `column-reverse` | flex container |
+| `flex-wrap` | `nowrap`, `wrap`, `wrap-reverse` | flex container |
+| `justify-content` | `flex-start`, `flex-end`, `center`, `space-between`, `space-around`, `space-evenly` | flex container |
+| `align-items` | `flex-start`, `flex-end`, `center`, `stretch`, `baseline` | flex container |
+| `align-content` | `flex-start`, `flex-end`, `center`, `stretch`, `space-between`, `space-around` | flex container (multi-line) |
+| `gap`, `row-gap`, `column-gap` | `<length>` | flex container |
+| `flex-grow` | `<number>` (default 0) | flex item |
+| `flex-shrink` | `<number>` (default 1) | flex item |
+| `flex-basis` | `<length>`, `auto` (default `auto`) | flex item |
+| `order` | `<integer>` (default 0) | flex item |
+| `align-self` | `auto`, `flex-start`, `flex-end`, `center`, `stretch`, `baseline` | flex item |
 
 > **Note:** Units are in **character cells** (columns × rows), not CSS pixels.  
 > `margin: 2` means 2 character cells of margin.  
@@ -229,7 +255,7 @@ Tuix parses a subset of HTML. Tags, attributes, classes, and IDs work as expecte
 | Descendant | `div p` | Matches `p` inside `div` |
 | Child | `div > p` | Matches direct child |
 | Adjacent | `h1 + p` | Matches `p` immediately after `h1` |
-| Pseudo-class | `:hover` | Parsed but not yet active |
+| Pseudo-class | `:hover`, `:focus`, `:focus-visible`, `:focus-within` | Matches dynamic element state |
 | Comma list | `h1, h2, h3` | Multiple selectors share the same declarations |
 
 ### Colors
@@ -312,6 +338,46 @@ app.OnResize(func(w, h int) {
 app.OnMouse(func(btn terminal.MouseButton, x, y int) {
     // Called on mouse events
 })
+
+app.OnFocus(func(el *dom.Node) {
+    // Called when an element receives focus
+})
+
+app.OnBlur(func(el *dom.Node) {
+    // Called when an element loses focus
+})
+```
+
+### Focus Management API
+
+```go
+// FocusElement sets focus to a specific DOM node
+app.FocusElement(node)
+
+// Blur removes focus from the currently focused element
+app.Blur()
+
+// FocusedElement returns the currently focused node (or nil)
+focused := app.FocusedElement()
+```
+
+#### `tabindex` Attribute
+
+| Value | Behavior |
+|-------|----------|
+| `tabindex="0"` | Element is focusable and Tab-navigable in DOM order |
+| `tabindex="-1"` | Element is programmatically focusable (via `FocusElement()`) but skipped during Tab navigation |
+| `tabindex="5"` | Positive values are focusable and Tab-navigable (in numerical order, then DOM order) |
+| *(no attribute)* | Native focusable tags (`<input>`, `<button>`, `<select>`, `<textarea>`, `<a>`) are Tab-navigable |
+
+#### `autofocus` Attribute
+
+Add `autofocus` to any focusable element to give it focus when the app starts:
+
+```html
+<input type="text" autofocus />
+<div tabindex="0" autofocus>Focused on start</div>
+```
 ```
 
 ### Key Constants
@@ -394,7 +460,135 @@ type Event struct {
 
 ---
 
+## ASCII Art Generator
+
+The `ascii` package provides FIGlet-compatible ASCII art text generation with built-in fonts.
+
+### Functions
+
+```go
+// Generate creates ASCII art text using the named font.
+// Supported fonts: "graffiti", "standard", "big", "block", "shadow"
+// Font names are case-insensitive.
+art, err := ascii.Generate("Hello", "graffiti")
+
+// AvailableFonts returns the list of built-in font names.
+fonts := ascii.AvailableFonts() // ["big", "block", "graffiti", "shadow", "standard"]
+
+// Must panics on error — useful for one-liners.
+art := ascii.Must(ascii.Generate("TUIX", "big"))
+```
+
+### Built-in Fonts
+
+| Font      | Description                    | Height | Source |
+|-----------|--------------------------------|--------|--------|
+| Graffiti  | Spray-painted street art style | 6      | FIGlet |
+| Standard  | Classic FIGlet font            | 6      | FIGlet |
+| Big       | Large, bold lettering          | 8      | FIGlet |
+| Block     | Clean, geometric block letters | 8      | FIGlet |
+| Shadow    | Letters with 3D shadow effect  | 5      | FIGlet |
+
+### Loading Custom Fonts
+
+Load any FIGlet `.flf` font file:
+
+```go
+data, _ := os.ReadFile("path/to/font.flf")
+font, err := ascii.ParseFIGlet("myfont", string(data))
+art := font.Render("Hello")
+```
+
+### Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/elioneto/tuix/ascii"
+)
+
+func main() {
+    art, _ := ascii.Generate("Hello!", "graffiti")
+    fmt.Println(art)
+}
+```
+
+Output:
+
+```
+  ___ ___          .__   .__           ._.
+ /   |   \   ____  |  |  |  |    ____  | |
+/    ~    \_/ __ \ |  |  |  |   /  _ \ | |
+\    Y    /\  ___/ |  |__|  |__(  <_> ) \|
+ \___|_  /  \___  > |____|____/ \____/  \|
+        \/       \/
+```
+
+### Image-to-ASCII Conversion
+
+Convert images (PNG, JPEG, GIF) to ASCII art with optional dithering and true-color output:
+
+```go
+// Basic grayscale ASCII from file
+art, err := ascii.FromFile("photo.png", ascii.DefaultImageOptions())
+
+// With custom options
+art := ascii.FromImage(img, ascii.ImageOptions{
+    Width:   80,
+    Height:  0,        // 0 = auto (preserves aspect ratio)
+    Charset: ascii.CharsetBlock, // or Standard, Simple, Detailed
+    Color:   true,     // true-color ANSI foreground per pixel
+    Dither:  true,     // Floyd-Steinberg error diffusion
+    Scale:   1.0,
+})
+
+// Animated GIF support
+frames, err := ascii.FromFileGIF("animation.gif", opts)
+for _, frame := range frames {
+    fmt.Print(frame)
+    time.Sleep(100 * time.Millisecond)
+}
+```
+
+**Built-in character sets:**
+
+| Constant | Levels | Description |
+|----------|--------|-------------|
+| `CharsetStandard` | 10 | `@@%#*+=-:. ` — balanced ramp |
+| `CharsetSimple` | 7 | `@%#*+=-.` — bold, compact |
+| `CharsetBlock` | 4 | ` ░▒▓█` — block elements |
+| `CharsetDetailed` | 16 | Full detailed ramp for fine gradients |
+  ___ ___          .__   .__           ._.
+ /   |   \   ____  |  |  |  |    ____  | |
+/    ~    \_/ __ \ |  |  |  |   /  _ \ | |
+\    Y    /\  ___/ |  |__|  |__(  <_> ) \|
+ \___|_  /  \___  >|____/|____/ \____/  __
+       \/       \/                      \/
+```
+
+---
+
 ## Examples
+
+All examples are in the `examples/` directory:
+
+| Example | Description | Run command |
+|---------|-------------|-------------|
+| **Counter** | Interactive counter with buttons, mouse click, and keyboard shortcuts | `go run ./examples/counter/` |
+| **Flexbox** | Flexbox layout demo with centering, wrapping, gap, and ordering | `go run ./examples/flexbox/` |
+| **Inline** | Inline text formatting with `span`, `strong`, `em`, nested elements | `go run ./examples/inline/` |
+| **Scrolling** | Scrollable content areas with scrollbars, keyboard & mouse wheel | `go run ./examples/scrolling/` |
+| **Forms** | Interactive form controls — text input, checkbox, radio, select, textarea | `go run ./examples/forms/` |
+| **ASCII** | ASCII art text generation with 5 built-in FIGlet fonts | `go run ./examples/ascii/` |
+| **ASCII Image** | Image-to-ASCII conversion — convert PNG/JPEG/GIF to ASCII art with dithering and color | `go run ./examples/ascii-image/` |
+| **Focus** | Focus management with Tab/Shift+Tab, focus ring, auto-focus, callbacks, tabindex | `go run ./examples/focus/` |
+| **Hover** | Hover effects with `:hover` pseudo-class, real-time mouse tracking, enter/leave callbacks | `go run ./examples/hover/` |
+| **Animations** | CSS animation/transition framework (foundation) | `go run ./examples/animations/` |
+| **Images** | Image rendering via sixel/kitty (foundation) | `go run ./examples/images/` |
+| **Z-Index** | Stacking order with z-index for overlapping elements | `go run ./examples/zindex/` |
+| **Windows** | Windows native support (foundation) | `go run ./examples/windows/` |
 
 ### Counter (interactive)
 
@@ -437,15 +631,26 @@ Tuix uses standard ANSI escape codes and should work in any modern terminal emul
 
 ## Roadmap
 
-- [ ] **Flexbox layout** — Support for `display: flex`
-- [ ] **Inline formatting** — Text flowing horizontally within a line
-- [ ] **Scrolling / overflow** — Scrollable content areas
-- [ ] **Input fields** — Text input, form controls
-- [ ] **Focus management** — Tab order, `:focus` pseudo-class
-- [ ] **Hover effects** — `:hover` pseudo-class trigger
-- [ ] **Animation** — CSS transitions and animations
-- [ ] **Images** — Image rendering via sixel or kitty protocol
-- [ ] **Test suite** — Comprehensive unit and integration tests
+### ✅ Completed
+
+- [x] **Block layout** — Box model with margin, border, padding, word-wrap
+- [x] **Flexbox layout** — `display: flex` with full property support
+- [x] **Inline formatting** — Text and inline elements flowing within lines
+- [x] **Scrolling / overflow** — Scrollable containers with scrollbars and mouse/keyboard input
+- [x] **Input fields & form controls** — Text input, checkbox, radio, select, textarea, button with Tab navigation
+- [x] **ASCII art text generator** — FIGlet font support (Graffiti, Standard, Big, Block, Shadow) via `ascii` package
+
+### 📋 Upcoming
+
+- [x] **Focus management** — `:focus` pseudo-class, focus ring, `tabindex`, auto-focus, OnFocus/OnBlur callbacks
+- [x] **Hover effects** — `:hover` pseudo-class trigger, mouse enter/leave events
+- [x] **ASCII art image converter** — PNG/JPEG/GIF → ASCII art with dithering, true-color output, GIF frame support
+- [ ] **CSS animations & transitions** — Animated property changes
+- [ ] **Modal / Dialog** — Overlay modal with backdrop, focus trap, `Esc` to close
+- [ ] **Alert / Toast notifications** — Non-blocking notification popups with auto-dismiss
+- [x] **Z-index / stacking contexts** — Proper layering of overlapping elements
+- [ ] **Image rendering** — Sixel and Kitty image protocols
+- [ ] **Comprehensive test suite** — Unit and integration tests
 - [ ] **Windows native support** — Windows console API fallback
 
 ---

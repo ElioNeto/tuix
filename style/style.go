@@ -43,6 +43,7 @@ type ComputedStyle struct {
 	Visibility     VisibilityType
 	WhiteSpace     WhiteSpaceType
 	LineHeight     Length
+	OutlineStyle   BorderStyle // CSS outline: none | solid (default solid when focused)
 
 	// Flexbox properties
 	FlexDirection  FlexDirectionType
@@ -282,6 +283,24 @@ func DefaultStyle() ComputedStyle {
 		FlexShrink:     1,
 		FlexBasis:      Length{Unit: LengthAuto},
 		Order:          0,
+
+		// Default outline: solid (visible when focused)
+		OutlineStyle: BorderSolid,
+	}
+}
+
+// DefaultDisplayForTag returns the default display value for a given HTML tag name.
+func DefaultDisplayForTag(tag string) DisplayType {
+	switch strings.ToLower(tag) {
+	case "a", "abbr", "acronym", "b", "bdi", "bdo", "big", "cite", "code",
+		"dfn", "em", "i", "kbd", "label", "map", "mark", "output", "q",
+		"ruby", "s", "samp", "small", "span", "strong", "sub", "sup",
+		"time", "tt", "u", "var", "wbr":
+		return DisplayInline
+	case "input", "textarea", "select", "button", "option", "progress", "meter":
+		return DisplayBlock
+	default:
+		return DisplayBlock
 	}
 }
 
@@ -314,8 +333,9 @@ func (r *Resolver) ResolveWithParent(node *dom.Node, parent ComputedStyle) Compu
 		return style
 	}
 
-	// Start from default and apply matched rules
+	// Start from default and apply tag-specific display
 	style = DefaultStyle()
+	style.Display = DefaultDisplayForTag(node.Data)
 
 	// Collect matching rules
 	type match struct {
@@ -486,8 +506,39 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 			// Just check for attribute presence
 			return node.GetAttribute(sel.Value) != "" || node.HasAttribute(sel.Value)
 		}
+
+	case css.SelectorPseudoClass:
+		// Match pseudo-classes based on dynamic state
+		// The 'focused' and 'hovered' attributes are set by tuix before each layout pass
+		switch sel.Value {
+		case "focus", "focus-visible":
+			return node.HasAttribute("focused") || node.GetAttribute("focused") != ""
+		case "focus-within":
+			// Check if this node or any descendant has focused attribute
+			return hasFocusWithin(node)
+		case "hover":
+			return node.HasAttribute("hovered") || node.GetAttribute("hovered") != ""
+		default:
+			return false
+		}
 	}
 
+	return false
+}
+
+// hasFocusWithin checks if the node or any of its descendants has the "focused" attribute set.
+func hasFocusWithin(node *dom.Node) bool {
+	if node == nil {
+		return false
+	}
+	if node.HasAttribute("focused") {
+		return true
+	}
+	for _, child := range node.Children {
+		if hasFocusWithin(child) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -756,6 +807,26 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 			style.Visibility = VisibilityHidden
 		case "collapse":
 			style.Visibility = VisibilityCollapse
+		}
+
+	case "outline":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "none":
+			style.OutlineStyle = BorderNone
+		case "solid":
+			style.OutlineStyle = BorderSolid
+		default:
+			style.OutlineStyle = BorderSolid
+		}
+
+	case "outline-style":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "none":
+			style.OutlineStyle = BorderNone
+		case "solid":
+			style.OutlineStyle = BorderSolid
+		default:
+			style.OutlineStyle = BorderSolid
 		}
 
 	case "white-space":

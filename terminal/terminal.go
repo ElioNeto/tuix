@@ -498,9 +498,16 @@ func (t *Terminal) parseMouseSGR(data []byte) {
 	}
 
 	var mb MouseButton
+	isMotion := btn&0x20 != 0
 	switch btn & 0x03 {
 	case 0:
-		mb = MouseLeft
+		if isMotion {
+			// Pure mouse move (no button held) or left drag
+			// If no other button is held, treat as MouseNone
+			mb = MouseNone
+		} else {
+			mb = MouseLeft
+		}
 	case 1:
 		mb = MouseMiddle
 	case 2:
@@ -613,16 +620,18 @@ func (t *Terminal) clearScreen() {
 	t.WriteString("\x1b[2J\x1b[H")
 }
 
-// enableMouse enables mouse tracking (X10 + SGR).
+// enableMouse enables mouse tracking (X10 + SGR + motion).
 func (t *Terminal) enableMouse() {
 	t.WriteString("\x1b[?1000h") // Enable mouse tracking
 	t.WriteString("\x1b[?1002h") // Enable button event tracking
+	t.WriteString("\x1b[?1003h") // Enable motion event tracking (hover)
 	t.WriteString("\x1b[?1006h") // Enable SGR mouse
 }
 
 // disableMouse disables mouse tracking.
 func (t *Terminal) disableMouse() {
 	t.WriteString("\x1b[?1006l")
+	t.WriteString("\x1b[?1003l")
 	t.WriteString("\x1b[?1002l")
 	t.WriteString("\x1b[?1000l")
 }
