@@ -11,50 +11,94 @@ func main() {
 
 	app.SetHTML(`
 		<div id="app">
+			<div class="navbar">
+				<span class="nav-brand">◆ Tuix DS</span>
+				<span class="nav-item">Overview</span>
+				<span class="nav-item">Components</span>
+				<span class="nav-item">Forms</span>
+			</div>
+
 			<h1>🎨 Design System</h1>
 
-			<div class="card">
-				<h2>Button Variants</h2>
-				<div class="flex gap-2" style="margin-bottom: 1;">
-					<button class="btn btn-primary">Primary</button>
-					<button class="btn btn-secondary">Secondary</button>
-					<button class="btn btn-danger">Danger</button>
-					<button class="btn btn-ghost">Ghost</button>
+			<div class="grid-2" style="margin-bottom: 1;">
+				<div class="card">
+					<h2>Buttons</h2>
+					<div class="flex gap-1" style="margin-bottom: 1;">
+						<button class="btn btn-primary">Primary</button>
+						<button class="btn btn-secondary">Secondary</button>
+					</div>
+					<div class="flex gap-1">
+						<button class="btn btn-danger">Danger</button>
+						<button class="btn btn-ghost">Ghost</button>
+					</div>
 				</div>
-				<div class="flex gap-2">
-					<button class="btn btn-sm">Small</button>
-					<button class="btn">Default</button>
-					<button class="btn btn-lg">Large</button>
+
+				<div class="card">
+					<h2>Badges</h2>
+					<div class="flex gap-1" style="margin-bottom: 1;">
+						<span class="badge badge-primary">New</span>
+						<span class="badge badge-success">Done</span>
+					</div>
+					<div class="flex gap-1">
+						<span class="badge badge-warning">Pending</span>
+						<span class="badge badge-error">Failed</span>
+					</div>
 				</div>
 			</div>
 
 			<div class="card">
-				<h2>Badges</h2>
-				<div class="flex gap-2">
-					<span class="badge badge-primary">Primary</span>
-					<span class="badge badge-success">Success</span>
-					<span class="badge badge-warning">Warning</span>
-					<span class="badge badge-error">Error</span>
+				<h2>Tabs</h2>
+				<div class="tabs">
+					<span class="tab tab-active">Overview</span>
+					<span class="tab">Settings</span>
+					<span class="tab">Profile</span>
+				</div>
+				<p style="margin-top: 1;">Tab content goes here.</p>
+			</div>
+
+			<div class="grid-2" style="margin-bottom: 1;">
+				<div class="card">
+					<h2>List Group</h2>
+					<div class="list">
+						<div class="list-item">Dashboard</div>
+						<div class="list-item">Analytics</div>
+						<div class="list-item">Reports</div>
+						<div class="list-item">Settings</div>
+					</div>
+				</div>
+
+				<div class="card">
+					<h2>Form Controls</h2>
+					<div class="field">
+						<label>Text</label>
+						<input type="text" class="input" placeholder="Enter name..." />
+					</div>
+					<div class="field">
+						<label>Range</label>
+						<input type="range" value="60" />
+					</div>
+					<div class="field">
+						<label>Color</label>
+						<input type="color" value="#FF6600" />
+					</div>
 				</div>
 			</div>
 
 			<div class="card">
-				<h2>Form Elements</h2>
-				<div class="field">
-					<label>Text Input</label>
-					<input type="text" class="input" placeholder="Type something..." />
-				</div>
-				<div class="field">
-					<label>Colored Input</label>
-					<input type="color" value="#FF6600" />
-				</div>
-				<div class="field">
-					<label>Range</label>
-					<input type="range" value="60" />
+				<h2>Table</h2>
+				<div class="table">
+					<div class="table-header">Name          Role         Status  </div>
+					<div class="table-row">Alice         Admin        Active  </div>
+					<div class="table-row">Bob           Editor       Active  </div>
+					<div class="table-row">Charlie       Viewer       Inactive</div>
 				</div>
 			</div>
 
-			<p class="text-center text-muted">Tab to navigate · q to quit</p>
+			<div class="flex justify-center gap-2" style="margin-top: 1;">
+				<button class="btn btn-primary" id="theme-toggle">Toggle Theme (T)</button>
+			</div>
+
+			<p class="text-center muted" style="margin-top: 1;">Tab to navigate · t to toggle theme · q to quit</p>
 		</div>
 	`)
 
@@ -73,7 +117,7 @@ func main() {
 			margin-bottom: 1;
 		}
 		.card {
-			margin-bottom: 1;
+			margin-bottom: 0;
 		}
 		.field {
 			margin-bottom: 1;
@@ -84,14 +128,25 @@ func main() {
 			font-weight: bold;
 			margin-bottom: 1;
 		}
-		.text-muted {
+		.muted {
 			color: #555;
 		}
 	`)
 
+	// Theme toggle
+	isDark := true
 	app.OnRune(func(r rune) {
-		if r == 'q' {
+		switch r {
+		case 'q':
 			app.Stop()
+		case 't', 'T':
+			if isDark {
+				app.SetTheme(tuix.DefaultLightTheme)
+				isDark = false
+			} else {
+				app.SetTheme(tuix.DefaultDarkTheme)
+				isDark = true
+			}
 		}
 	})
 

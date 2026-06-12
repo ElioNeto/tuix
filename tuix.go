@@ -173,6 +173,84 @@ const designSystemCSS = `
 .w-full { width: 100%; }
 .text-center { text-align: center; }
 .text-bold { font-weight: bold; }
+
+/* Navbar */
+.navbar {
+	display: flex;
+	align-items: center;
+	padding: 0 1;
+	background-color: #0f3460;
+	border: solid #0f3460;
+}
+.navbar .nav-brand {
+	font-weight: bold;
+	color: #00d4aa;
+	margin-right: 2;
+}
+.navbar .nav-item {
+	padding: 0 1;
+	color: #c0c0c0;
+}
+.navbar .nav-item:hover {
+	color: #00d4aa;
+}
+
+/* List group */
+.list {
+	border: solid #0f3460;
+}
+.list-item {
+	padding: 0 1;
+	border-bottom: solid #0f3460;
+}
+.list-item:last-child {
+	border-bottom: none;
+}
+.list-item:hover {
+	background-color: #0f3460;
+}
+
+/* Tabs */
+.tabs {
+	display: flex;
+	border-bottom: solid #0f3460;
+}
+.tab {
+	padding: 0 2;
+	color: #c0c0c0;
+}
+.tab-active {
+	color: #00d4aa;
+	font-weight: bold;
+	border-bottom: solid #00d4aa;
+}
+.tab:hover {
+	color: #00d4aa;
+}
+
+/* Table */
+.table {
+	width: 100%;
+	border: solid #0f3460;
+}
+.table-header {
+	font-weight: bold;
+	background-color: #0f3460;
+	padding: 0 1;
+	border-bottom: solid #0f3460;
+}
+.table-row {
+	padding: 0 1;
+}
+.table-row:nth-child(even) {
+	background-color: #16213e;
+}
+
+/* Grid */
+.grid-2 { display: flex; gap: 1; }
+.grid-2 > * { flex: 1; }
+.grid-3 { display: flex; gap: 1; }
+.grid-3 > * { flex: 1; }
 `
 
 // themeToCSS generates CSS rules from a Theme.
@@ -363,6 +441,7 @@ type App struct {
 	theme            Theme
 	useDesignSystem  bool
 	themeCSS         string // Generated CSS from the active theme
+	themeChanged     bool   // Flag to regenerate stylesheet on next render
 
 	// Datalist state
 	datalistMap      map[string][]string // datalist id → option texts
@@ -397,6 +476,7 @@ func (a *App) SetCSS(cssContent string) {
 func (a *App) SetTheme(t Theme) {
 	a.theme = t
 	a.themeCSS = themeToCSS(t)
+	a.themeChanged = true
 }
 
 // UseDesignSystem enables the built-in design system CSS with component classes.
@@ -728,20 +808,8 @@ func (a *App) Run() error {
 		a.document = dom.Document()
 	}
 
-	// Parse CSS — toast defaults go first so user CSS can override
-	combinedCSS := toastDefaultCSS
-	if a.useDesignSystem {
-		combinedCSS = designSystemCSS + "\n" + combinedCSS
-	}
-	if a.themeCSS != "" {
-		combinedCSS = a.themeCSS + "\n" + combinedCSS
-	}
-	if a.css != "" {
-		combinedCSS += "\n" + a.css
-	}
-	cssParser := css.NewParser(combinedCSS)
-	sheet, _ := cssParser.Parse()
-	a.stylesheet = sheet
+	// Parse CSS — uses rebuildStylesheet to combine toast + design system + theme + user styles
+	a.rebuildStylesheet()
 
 	// Initialize form state by scanning the DOM
 	a.initFormState(a.document)
@@ -1117,6 +1185,12 @@ func (a *App) renderFrame() {
 		return
 	}
 
+	// Rebuild stylesheet if theme changed
+	if a.themeChanged {
+		a.rebuildStylesheet()
+		a.themeChanged = false
+	}
+
 	// Graft modal node into the document if active
 	var modalParent *dom.Node
 	if a.modalActive && a.modalNode != nil {
@@ -1194,6 +1268,23 @@ func (a *App) renderFrame() {
 	// Full render (pass nil to always output everything)
 	output := a.canvas.Render(nil)
 	a.terminal.WriteString(output)
+}
+
+// rebuildStylesheet re-parses the combined CSS (toast + design system + theme + user).
+func (a *App) rebuildStylesheet() {
+	combinedCSS := toastDefaultCSS
+	if a.useDesignSystem {
+		combinedCSS = designSystemCSS + "\n" + combinedCSS
+	}
+	if a.themeCSS != "" {
+		combinedCSS = a.themeCSS + "\n" + combinedCSS
+	}
+	if a.css != "" {
+		combinedCSS += "\n" + a.css
+	}
+	cssParser := css.NewParser(combinedCSS)
+	sheet, _ := cssParser.Parse()
+	a.stylesheet = sheet
 }
 
 // paintTooltip renders a tooltip popup near the mouse cursor.

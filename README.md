@@ -580,15 +580,15 @@ All examples are in the `examples/` directory:
 | **Flexbox** | Flexbox layout demo with centering, wrapping, gap, and ordering | `go run ./examples/flexbox/` |
 | **Inline** | Inline text formatting with `span`, `strong`, `em`, nested elements | `go run ./examples/inline/` |
 | **Scrolling** | Scrollable content areas with scrollbars, keyboard & mouse wheel | `go run ./examples/scrolling/` |
-| **Forms** | Interactive form controls — text input, checkbox, radio, select, textarea | `go run ./examples/forms/` |
+| **Forms** | Full form demo — text, search, number, range, color, date inputs, checkbox, radio, select dropdown, textarea, buttons, progress bar, meter gauge, datalist autocomplete | `go run ./examples/forms/` |
 | **ASCII** | ASCII art text generation with 5 built-in FIGlet fonts | `go run ./examples/ascii/` |
 | **ASCII Image** | Image-to-ASCII conversion — convert PNG/JPEG/GIF to ASCII art with dithering and color | `go run ./examples/ascii-image/` |
 | **Focus** | Focus management with Tab/Shift+Tab, focus ring, auto-focus, callbacks, tabindex | `go run ./examples/focus/` |
 | **Hover** | Hover effects with `:hover` pseudo-class, real-time mouse tracking, enter/leave callbacks | `go run ./examples/hover/` |
-| **Animations** | CSS animation/transition framework (foundation) | `go run ./examples/animations/` |
-| **Images** | Image rendering via sixel/kitty (foundation) | `go run ./examples/images/` |
+| **Modal** | Modal dialog overlay with focus trap, Escape-to-close, backdrop | `go run ./examples/modal/` |
+| **Toast** | Toast notifications with 4 types (info/success/warning/error), auto-dismiss, stacking | `go run ./examples/toast/` |
 | **Z-Index** | Stacking order with z-index for overlapping elements | `go run ./examples/zindex/` |
-| **Windows** | Windows native support (foundation) | `go run ./examples/windows/` |
+| **Design System** | Pre-built components (buttons, badges, cards, navbar, tabs, lists, tables) with interactive theme switcher | `go run ./examples/design-system/` |
 
 ### Counter (interactive)
 
@@ -629,6 +629,94 @@ Tuix uses standard ANSI escape codes and should work in any modern terminal emul
 
 ---
 
+## Design System
+
+Tuix includes a built-in design system with pre-built CSS components and theme support.
+
+### Using the Design System
+
+```go
+app := tuix.New()
+app.UseDesignSystem() // Enables all pre-built components
+app.Run()
+```
+
+`UseDesignSystem()` automatically applies `DefaultDarkTheme` and the built-in component CSS.
+
+### Theme API
+
+```go
+import "github.com/elioneto/tuix"
+
+// Built-in themes
+app.SetTheme(tuix.DefaultDarkTheme)
+app.SetTheme(tuix.DefaultLightTheme)
+
+// Custom theme
+app.SetTheme(tuix.Theme{
+    Primary:   color.Color{R: 0x00, G: 0xD4, B: 0xAA},
+    Secondary: color.Color{R: 0x0F, G: 0x34, B: 0x60},
+    Accent:    color.Color{R: 0xE9, G: 0x45, B: 0x60},
+    Success:   color.Color{R: 0x2E, G: 0xCC, B: 0x71},
+    Warning:   color.Color{R: 0xF3, G: 0x9C, B: 0x12},
+    Error:     color.Color{R: 0xE7, G: 0x4C, B: 0x3C},
+    Surface:   color.Color{R: 0x16, G: 0x21, B: 0x3E},
+    Background: color.Color{R: 0x1A, G: 0x1A, B: 0x2E},
+    Text:      color.Color{R: 0xC0, G: 0xC0, B: 0xC0},
+    Muted:     color.Color{R: 0x55, G: 0x55, B: 0x55},
+    Border:    color.Color{R: 0x0F, G: 0x34, B: 0x60},
+    Focus:     color.Color{R: 0x00, G: 0xD4, B: 0xAA},
+})
+```
+
+Theme colors are applied as CSS utility classes — `.bg-primary`, `.text-muted`, `.border-error`, etc. — and can be used alongside regular CSS.
+
+### Pre-built Components
+
+| Class | Description |
+|-------|-------------|
+| `.btn` | Base button with border and padding |
+| `.btn-primary` | Primary action button (filled) |
+| `.btn-secondary` | Secondary action button (outlined) |
+| `.btn-danger` | Destructive action button |
+| `.btn-ghost` | Ghost button (no border/background) |
+| `.btn-sm` / `.btn-lg` | Small / Large button sizes |
+| `.input` | Text input with consistent styling |
+| `.input-error` | Input in error state |
+| `.input-sm` / `.input-lg` | Small / Large input sizes |
+| `.badge` | Badge/tag base |
+| `.badge-primary` / `.badge-success` / `.badge-warning` / `.badge-error` | Colored badges |
+| `.card` | Card container with border and padding |
+| `.navbar` | Top navigation bar with brand and items |
+| `.nav-brand` | Brand/logo text in navbar |
+| `.nav-item` | Navigation item in navbar |
+| `.list` | List group container |
+| `.list-item` | List group item |
+| `.tabs` | Tab navigation container |
+| `.tab` | Individual tab item |
+| `.tab-active` | Active tab state |
+| `.table` | Table container |
+| `.table-header` | Table header row |
+| `.table-row` | Table data row |
+
+### Layout Utilities
+
+| Class | Description |
+|-------|-------------|
+| `.flex` | `display: flex` |
+| `.flex-col` | `flex-direction: column` |
+| `.flex-wrap` | `flex-wrap: wrap` |
+| `.items-center` | `align-items: center` |
+| `.justify-center` | `justify-content: center` |
+| `.justify-between` | `justify-content: space-between` |
+| `.gap-1` / `.gap-2` / `.gap-4` | `gap` spacing |
+| `.w-full` | `width: 100%` |
+| `.text-center` | `text-align: center` |
+| `.text-bold` | `font-weight: bold` |
+| `.grid-2` / `.grid-3` | Equal-width grid columns |
+
+---
+
 ## Roadmap
 
 ### ✅ Completed
@@ -649,10 +737,12 @@ Tuix uses standard ANSI escape codes and should work in any modern terminal emul
 - [x] **Modal / Dialog** — Overlay modal with backdrop, focus trap, `Esc` to close
 - [x] **Alert / Toast notifications** — Non-blocking notification popups with auto-dismiss, alert/confirm dialogs
 - [x] **Z-index / stacking contexts** — Proper layering of overlapping elements
-- [x] **Enhanced form controls** — Search, number, range inputs, pseudo-classes (:disabled/:enabled/:required/:optional/:read-only/:read-write/:placeholder-shown), progress/meter elements
+- [x] **Enhanced form controls** — Search, number, range, color, date inputs, pseudo-classes (:disabled/:enabled/:required/:optional/:read-only/:read-write/:placeholder-shown), progress/meter elements, tooltips, datalist autocomplete, select dropdown
+- [x] **Design System** — Theme engine (light/dark), pre-built components (buttons, badges, cards, navbar, tabs, lists, tables), layout utilities, `UseDesignSystem()` API
 - [ ] **Image rendering** — Sixel and Kitty image protocols
 - [ ] **Comprehensive test suite** — Unit and integration tests
 - [ ] **Windows native support** — Windows console API fallback
+- [ ] **CSS animations & transitions** — Animated property changes
 
 ---
 
