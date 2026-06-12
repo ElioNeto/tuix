@@ -30,6 +30,14 @@ type Selector struct {
 	Classes     []string // Additional classes for compound selectors (.btn.secondary)
 	ID          string    // ID if present (for compound like div#app)
 	Tag         string    // Tag if present (for compound like a.class)
+	Attrs       []AttrCondition // Attribute conditions for compound selectors (e.g. [disabled])
+}
+
+// AttrCondition represents a single attribute selector condition.
+type AttrCondition struct {
+	Name     string // Attribute name (e.g. "disabled", "type")
+	Operator string // "", "=", "~=", "|=", "^=", "$=", "*="
+	Value    string // Value to match against (empty for presence-only)
 }
 
 // SelectorType categorizes CSS selectors.
@@ -391,6 +399,10 @@ func mergeCompound(a, b Selector) Selector {
 		result.Tag = b.Value
 	} else if b.Type == SelectorPseudoClass || b.Type == SelectorPseudoElement {
 		// Store as additional condition
+	} else if b.Type == SelectorAttribute {
+		// Preserve attribute condition
+		name, op, val := parseAttrSelector(b.Value)
+		result.Attrs = append(result.Attrs, AttrCondition{Name: name, Operator: op, Value: val})
 	}
 
 	return result
@@ -406,6 +418,40 @@ func combineSelectors(a, b Selector) Selector {
 	result.Specificity.C += a.Specificity.C
 	result.Specificity.D += a.Specificity.D
 	return result
+}
+
+// parseAttrSelector parses a selector value like "type=text" or "disabled"
+// into its attribute name, operator, and value components.
+func parseAttrSelector(s string) (name, op, val string) {
+	if idx := strings.Index(s, "="); idx >= 0 {
+		name = s[:idx]
+		// Check for operator prefix (~=, |=, ^=, $=, *=)
+		switch {
+		case strings.HasSuffix(name, "~"):
+			op = "~="
+			name = name[:len(name)-1]
+		case strings.HasSuffix(name, "|"):
+			op = "|="
+			name = name[:len(name)-1]
+		case strings.HasSuffix(name, "^"):
+			op = "^="
+			name = name[:len(name)-1]
+		case strings.HasSuffix(name, "$"):
+			op = "$="
+			name = name[:len(name)-1]
+		case strings.HasSuffix(name, "*"):
+			op = "*="
+			name = name[:len(name)-1]
+		default:
+			op = "="
+		}
+		val = s[idx+1:]
+	} else {
+		name = s
+		op = ""
+		val = ""
+	}
+	return
 }
 
 // parseSimpleSelector parses a single simple selector (tag, .class, #id, etc.).

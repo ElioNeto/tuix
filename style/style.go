@@ -379,6 +379,53 @@ func (r *Resolver) ResolveWithParent(node *dom.Node, parent ComputedStyle) Compu
 	return style
 }
 
+// matchAttrs checks if the node matches all attribute conditions in the selector.
+func matchAttrs(node *dom.Node, attrs []css.AttrCondition) bool {
+	for _, attr := range attrs {
+		nodeVal := node.GetAttribute(attr.Name)
+		switch attr.Operator {
+		case "":
+			// Presence-only: [attr]
+			if nodeVal == "" && !node.HasAttribute(attr.Name) {
+				return false
+			}
+		case "=":
+			if nodeVal != attr.Value {
+				return false
+			}
+		case "~=":
+			words := strings.Fields(nodeVal)
+			found := false
+			for _, w := range words {
+				if w == attr.Value {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		case "|=":
+			if nodeVal != attr.Value && !strings.HasPrefix(nodeVal, attr.Value+"-") {
+				return false
+			}
+		case "^=":
+			if !strings.HasPrefix(nodeVal, attr.Value) {
+				return false
+			}
+		case "$=":
+			if !strings.HasSuffix(nodeVal, attr.Value) {
+				return false
+			}
+		case "*=":
+			if !strings.Contains(nodeVal, attr.Value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // matchesSelector checks if a DOM node matches a CSS selector.
 func matchesSelector(node *dom.Node, sel css.Selector) bool {
 	if node.Type != dom.NodeElement {
@@ -387,7 +434,6 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 
 	switch sel.Type {
 	case css.SelectorUniversal:
-		// May also have compound conditions
 		if sel.Tag != "" && node.TagName() != sel.Tag {
 			return false
 		}
@@ -399,13 +445,12 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 				return false
 			}
 		}
-		return true
+		return matchAttrs(node, sel.Attrs)
 
 	case css.SelectorTag:
 		if node.TagName() != sel.Value {
 			return false
 		}
-		// Check compound conditions
 		if sel.ID != "" && node.ID() != sel.ID {
 			return false
 		}
@@ -414,14 +459,12 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 				return false
 			}
 		}
-		return true
+		return matchAttrs(node, sel.Attrs)
 
 	case css.SelectorClass:
-		// Primary class must match
 		if !node.HasClass(sel.Value) {
 			return false
 		}
-		// Additional classes must also match
 		for _, cls := range sel.Classes {
 			if cls == sel.Value {
 				continue
@@ -430,15 +473,13 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 				return false
 			}
 		}
-		// Check ID if present
 		if sel.ID != "" && node.ID() != sel.ID {
 			return false
 		}
-		// Check tag if present
 		if sel.Tag != "" && node.TagName() != sel.Tag {
 			return false
 		}
-		return true
+		return matchAttrs(node, sel.Attrs)
 
 	case css.SelectorID:
 		if node.ID() != sel.Value {
