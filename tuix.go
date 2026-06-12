@@ -2030,30 +2030,17 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		}
 	}
 	if node.HasClass("animate-pulse") {
-		// Toggle text content between dim and bright states
-		// Uses visible text change instead of CSS attribute selectors
-		for _, child := range node.Children {
-			if child.Type == dom.NodeText {
-				if a.animFrame%4 < 2 {
-					child.Data = "●"  // filled circle = bright
-				} else {
-					child.Data = "○"  // hollow circle = dim
-				}
-				break
-			}
+		if a.animFrame%4 < 2 {
+			delete(node.Attributes, "pulsing")
+		} else {
+			node.SetAttribute("pulsing", "")
 		}
 	}
 	if node.HasClass("animate-blink") {
-		// Toggle visibility by changing text content
-		for _, child := range node.Children {
-			if child.Type == dom.NodeText {
-				if a.animFrame%2 == 0 {
-					child.Data = "■ Recording"  // visible
-				} else {
-					child.Data = "  Recording"  // hidden (spaces replace ■)
-				}
-				break
-			}
+		if a.animFrame%2 == 0 {
+			node.SetAttribute("blinking", "")
+		} else {
+			delete(node.Attributes, "blinking")
 		}
 	}
 
