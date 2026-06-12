@@ -461,8 +461,8 @@ func (e *LayoutEngine) layoutInline(container *Box, inlineChildren []*Box, curso
 			// Inline element: determine its content size
 			child.ComputedWidth = resolveLength(child.Style.Width, availableWidth)
 			if child.ComputedWidth == 0 {
-				// For inline elements without explicit width, estimate from content
-				child.ComputedWidth = 1 // minimum
+				// For inline elements without explicit width, compute from content
+				child.ComputedWidth = textContentWidth(child)
 			}
 			child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
 			if child.ComputedHeight == 0 {
@@ -1115,19 +1115,33 @@ func (e *LayoutEngine) calculatePositions(box *Box, parentX, parentY float64) {
 
 // resolveLength resolves a length value to a concrete pixel value.
 func resolveLength(l style.Length, parent float64) float64 {
-	switch l.Unit {
-	case style.LengthPx:
-		return l.Value
-	case style.LengthEm, style.LengthRem:
-		return l.Value * 16 // Base font size
-	case style.LengthPercent:
-		return l.Value * parent / 100.0
-	case style.LengthAuto:
-		return 0
-	case style.LengthNone:
+	if l.Unit == style.LengthAuto || l.Value == 0 {
 		return 0
 	}
-	return 0
+	if l.Unit == style.LengthPercent {
+		return l.Value / 100.0 * parent
+	}
+	return l.Value
+}
+
+// textContentWidth computes the total character width of text content
+// in an inline element's child text nodes.
+func textContentWidth(box *Box) float64 {
+	var w float64
+	for _, child := range box.Children {
+		if child.Type == BoxText && child.Node != nil {
+			for _, word := range strings.Fields(child.Node.Data) {
+				w += float64(len(word))
+				if w > 0 {
+					w++ // space between words
+				}
+			}
+		}
+	}
+	if w < 1 {
+		w = 1
+	}
+	return w
 }
 
 // FindBoxAtPoint returns the deepest box at the given point.
