@@ -723,6 +723,14 @@ func (e *LayoutEngine) layoutFlex(container *Box) {
 		item.ComputedWidth = resolveLength(item.Style.Width, contentWidth)
 		item.ComputedHeight = resolveLength(item.Style.Height, contentHeight)
 
+		// For inline elements without explicit width, compute from text content
+		if item.ComputedWidth == 0 && item.Style.Display == style.DisplayInline {
+			item.ComputedWidth = textContentWidth(item)
+		}
+		if item.ComputedHeight == 0 {
+			item.ComputedHeight = 1
+		}
+
 		// Determine flex basis — the initial main size before growing/shrinking
 		var flexBasis float64
 		if item.Style.FlexBasis.Unit != style.LengthAuto {
@@ -1012,6 +1020,17 @@ func (e *LayoutEngine) layoutFlex(container *Box) {
 			item.ContentRect.Y = item.Rect.Y + int(item.Border.Top+item.Padding.Top)
 			item.ContentRect.Width = int(item.ComputedWidth)
 			item.ContentRect.Height = int(item.ComputedHeight)
+
+			// Propagate position to child text boxes (for inline flex items)
+			for _, child := range item.Children {
+				if child.Type == BoxText {
+					child.Rect.X = item.ContentRect.X
+					child.Rect.Y = item.ContentRect.Y
+					child.Rect.Width = item.ContentRect.Width
+					child.Rect.Height = item.ContentRect.Height
+					child.ContentRect = child.Rect
+				}
+			}
 
 			// Recurse into children of this flex item
 			e.layoutBox(item)
