@@ -131,7 +131,13 @@ type App struct {
 	savedScroll map[*dom.Node]struct{ X, Y int }
 
 	// Scroll state
-	scrollContainer *layout.Box // The currently focused scrollable container
+	scrollContainer *layout.Box // The currently focused scroll container
+
+	// Mouse drag state
+	mouseDown bool // Whether a mouse button is currently held down
+
+	// Dragged element for slider drag tracking
+	dragTarget *dom.Node // The node being dragged (e.g., range slider thumb)
 
 	// Form control state
 	formValues  map[*dom.Node]string // Current value/text for each input/textarea/select
@@ -676,6 +682,7 @@ func (a *App) handleEvent(event terminal.Event) {
 				if target != nil && target.Node != nil {
 					if a.isNodeInModal(target.Node) {
 						a.focusNode(target.Node)
+						a.handleRangeClick(event.MouseX, target)
 						a.renderFrame()
 					}
 					// Clicks on background (backdrop) are ignored — keeps focus trapped
@@ -683,6 +690,7 @@ func (a *App) handleEvent(event terminal.Event) {
 			} else {
 				if target != nil && target.Node != nil {
 					a.focusNode(target.Node)
+					a.handleRangeClick(event.MouseX, target)
 				} else {
 					a.formFocused = -1
 				}
@@ -695,9 +703,8 @@ func (a *App) handleEvent(event terminal.Event) {
 			a.handleMouseWheel(event)
 		}
 
-		// Mouse move / drag — update hover state
+		// Mouse move / drag — update hover state and handle range drag
 		if event.MouseButton == terminal.MouseNone {
-			// Pure mouse move — recompute hovered element
 			oldHovered := a.hoveredNode
 			if a.rootBox != nil {
 				target := a.rootBox.FindBoxAtPoint(event.MouseX, event.MouseY)
@@ -709,10 +716,19 @@ func (a *App) handleEvent(event terminal.Event) {
 			} else {
 				a.hoveredNode = nil
 			}
-			// Re-render if hover state changed
-			if oldHovered != a.hoveredNode {
+
+			// Handle range slider drag
+			if a.dragTarget != nil {
+				a.dragRangeByMouse(event.MouseX)
+			}
+
+			// Re-render if hover state changed or drag was active
+			if oldHovered != a.hoveredNode || a.dragTarget != nil {
 				a.renderFrame()
 			}
+		} else {
+			// Any button event (including release) ends drag
+			a.dragTarget = nil
 		}
 
 		if a.onMouse != nil {
@@ -1122,20 +1138,44 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 				text = "(*) "
 			}
 			a.setInputTextChild(node, text)
-		default: // text, password, email, search, number, etc.
+		case "search":
 			val := a.formValues[node]
-			isPassword := inputType == "password"
-
-			// Mask password values
-			if isPassword && val != "" {
-				val = strings.Repeat("•", len([]rune(val)))
+			showClear := val != ""
+			if val == "" {
+				val = node.GetAttribute("placeholder")
+			}
+			// Show value with cursor if focused
+			if a.formFocused >= 0 && a.formFocused < len(a.formFocusables) &&
+				a.formFocusables[a.formFocused] == node {
+				runes := []rune(val)
+				cursor := a.formCursors[node]
+				if cursor < 0 {
+					cursor = 0
+				}
+				if cursor > len(runes) {
+					cursor = len(runes)
+				}
+				// Insert cursor character
+				display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
+				if showClear {
+					display += " ×"
+				}
+				a.setInputTextChild(node, display)
+			} else {
+				if showClear {
+					val += " ×"
+				}
+				a.setInputTextChild(node, val)
 			}
 
-			// For search inputs, show a clear indicator (×) when non-empty
-			isSearch := inputType == "search"
-			showClear := isSearch && len([]rune(val)) > 0
+		case "range":
+			// Range slider handled separately
+			val := a.formValues[node]
+			a.prepareRangeDOM(node, val)
 
-			// For number inputs, show increment/decrement indicators when focused
+		default: // text, password, email, number, etc.
+			val := a.formValues[node]
+			isPassword := inputType == "password"
 			isNumber := inputType == "number"
 
 			if val == "" {
@@ -1155,18 +1195,28 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 				if cursor > len(runes) {
 					cursor = len(runes)
 				}
-				// Insert cursor character
-				display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
-				if showClear {
-					display += " ×"
+				if isPassword {
+					// Replace all characters with password mask
+					runes = []rune(strings.Repeat("•", len(runes)))
+					if cursor < 0 {
+						cursor = 0
+					}
+					if cursor > len(runes) {
+						cursor = len(runes)
+					}
+					display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
+					a.setInputTextChild(node, display)
+				} else {
+					// Insert cursor character
+					display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
+					if isNumber {
+						display += " ▲▼"
+					}
+					a.setInputTextChild(node, display)
 				}
-				if isNumber {
-					display += " ▲▼"
-				}
-				a.setInputTextChild(node, display)
 			} else {
-				if showClear {
-					val += " ×"
+				if isPassword {
+					val = strings.Repeat("•", len([]rune(val)))
 				}
 				if isNumber {
 					val += " ▲▼"
@@ -1495,6 +1545,9 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		case "number":
 			// Number input: up/down arrows increment/decrement
 			return a.handleNumberEdit(event, focused)
+		case "range":
+			// Range slider: left/right arrows adjust, mouse drag adjusts
+			return a.handleRangeEdit(event, focused)
 		default: // text, password, email, etc.
 			return a.handleTextEdit(event, focused)
 		}
@@ -1722,6 +1775,276 @@ func (a *App) handleNumberEdit(event terminal.Event, node *dom.Node) bool {
 		// Fall through to text editing for typing numbers
 		return a.handleTextEdit(event, node)
 	}
+}
+
+// handleRangeEdit handles keyboard input for <input type="range">.
+// Left/Right arrows adjust value by step; Home/End go to min/max.
+func (a *App) handleRangeEdit(event terminal.Event, node *dom.Node) bool {
+	val := a.formValues[node]
+	if val == "" {
+		val = "0"
+	}
+
+	stepStr := node.GetAttribute("step")
+	step := 1
+	if stepStr != "" {
+		if s, err := parseInt(stepStr); err == nil && s > 0 {
+			step = s
+		}
+	}
+
+	minStr := node.GetAttribute("min")
+	maxStr := node.GetAttribute("max")
+	var minVal, maxVal int
+	hasMin := false
+	hasMax := false
+	if minStr != "" {
+		if v, err := parseInt(minStr); err == nil {
+			minVal = v
+			hasMin = true
+		}
+	}
+	if maxStr != "" {
+		if v, err := parseInt(maxStr); err == nil {
+			maxVal = v
+			hasMax = true
+		}
+	}
+	// Default range if neither min nor max specified
+	if !hasMin && !hasMax {
+		hasMin = true
+		hasMax = true
+		minVal = 0
+		maxVal = 100
+	} else if !hasMin {
+		minVal = maxVal - 100
+		hasMin = true
+	} else if !hasMax {
+		maxVal = minVal + 100
+		hasMax = true
+	}
+
+	n := 0
+	if val != "" {
+		n, _ = parseInt(val)
+	}
+
+	switch event.Key {
+	case terminal.KeyLeft:
+		n -= step
+		if n < minVal {
+			n = minVal
+		}
+		a.formValues[node] = itoa(n)
+		a.renderFrame()
+		return true
+
+	case terminal.KeyRight:
+		n += step
+		if n > maxVal {
+			n = maxVal
+		}
+		a.formValues[node] = itoa(n)
+		a.renderFrame()
+		return true
+
+	case terminal.KeyHome:
+		a.formValues[node] = itoa(minVal)
+		a.renderFrame()
+		return true
+
+	case terminal.KeyEnd:
+		a.formValues[node] = itoa(maxVal)
+		a.renderFrame()
+		return true
+
+	default:
+		// All other keys are ignored (no text editing for range sliders)
+		return true
+	}
+}
+
+// prepareRangeDOM renders <input type="range"> as a visual slider:
+//   [===============-------------------] 45
+func (a *App) prepareRangeDOM(node *dom.Node, val string) {
+	if val == "" {
+		val = "0"
+	}
+
+	// Parse range attributes
+	minStr := node.GetAttribute("min")
+	maxStr := node.GetAttribute("max")
+	var minVal, maxVal float64
+	var hasMin, hasMax bool
+	if minStr != "" {
+		if v, err := parseInt(minStr); err == nil {
+			minVal = float64(v)
+			hasMin = true
+		}
+	}
+	if maxStr != "" {
+		if v, err := parseInt(maxStr); err == nil {
+			maxVal = float64(v)
+			hasMax = true
+		}
+	}
+	if !hasMin && !hasMax {
+		minVal = 0
+		maxVal = 100
+	} else if !hasMin {
+		minVal = maxVal - 100
+	} else if !hasMax {
+		maxVal = minVal + 100
+	}
+
+	// Parse current value
+	curVal := 0.0
+	if v, err := parseInt(val); err == nil {
+		curVal = float64(v)
+	}
+	// Clamp
+	if curVal < minVal {
+		curVal = minVal
+	}
+	if curVal > maxVal {
+		curVal = maxVal
+	}
+
+	// Compute display
+	rangeSize := maxVal - minVal
+	var fraction float64
+	if rangeSize > 0 {
+		fraction = (curVal - minVal) / rangeSize
+	} else {
+		fraction = 0
+	}
+
+	// Build the track: 20 chars wide
+	trackWidth := 20
+	filled := int(fraction * float64(trackWidth))
+	// Clamp thumb position to valid range [0, trackWidth-1]
+	if filled >= trackWidth {
+		filled = trackWidth - 1
+	}
+	if filled < 0 {
+		filled = 0
+	}
+
+	track := "["
+	for i := 0; i < trackWidth; i++ {
+		if i == filled {
+			track += "o"
+		} else if i < filled {
+			track += "="
+		} else {
+			track += "-"
+		}
+	}
+	track += "]"
+
+	// Show value
+	display := track + " " + itoa(int(curVal))
+	a.setInputTextChild(node, display)
+}
+
+// handleRangeClick handles a mouse click on a range input.
+// It computes the value from the mouse X position relative to the slider track.
+func (a *App) handleRangeClick(mouseX int, box *layout.Box) {
+	if box == nil || box.Node == nil {
+		return
+	}
+	tag := strings.ToLower(box.Node.Data)
+	if tag != "input" {
+		return
+	}
+	inputType := strings.ToLower(box.Node.GetAttribute("type"))
+	if inputType != "range" {
+		return
+	}
+
+	val := a.computeRangeValueFromX(box.Node, box, mouseX)
+	a.formValues[box.Node] = itoa(val)
+	a.dragTarget = box.Node
+}
+
+// dragRangeByMouse handles mouse drag on a range input.
+func (a *App) dragRangeByMouse(mouseX int) {
+	if a.dragTarget == nil || a.rootBox == nil {
+		return
+	}
+	val := a.computeRangeValueFromX(a.dragTarget, a.findBoxForNode(a.dragTarget), mouseX)
+	a.formValues[a.dragTarget] = itoa(val)
+}
+
+// computeRangeValueFromX computes the range value from a mouse X position on the track.
+func (a *App) computeRangeValueFromX(node *dom.Node, box *layout.Box, mouseX int) int {
+	if box == nil {
+		return 0
+	}
+	// Parse range attributes
+	minStr := node.GetAttribute("min")
+	maxStr := node.GetAttribute("max")
+	minVal := 0
+	maxVal := 100
+	if minStr != "" {
+		if v, err := parseInt(minStr); err == nil {
+			minVal = v
+		}
+	}
+	if maxStr != "" {
+		if v, err := parseInt(maxStr); err == nil {
+			maxVal = v
+		}
+	}
+
+	// The track starts inside the content area, 1 cell after the left edge (for the "[" char)
+	contentX := box.ContentRect.X
+	// The track display is "[" + trackWidth chars + "]" + " " + valueText
+	trackWidth := 20 // must match prepareRangeDOM
+	trackStart := contentX + 1 // after the "["
+
+	// Compute fraction based on mouse X within the track
+	relX := mouseX - trackStart
+	fraction := float64(relX) / float64(trackWidth)
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+
+	rangeSize := maxVal - minVal
+	val := minVal + int(fraction*float64(rangeSize)+0.5) // round
+	if val < minVal {
+		val = minVal
+	}
+	if val > maxVal {
+		val = maxVal
+	}
+	return val
+}
+
+// findBoxForNode finds the layout box that corresponds to a given DOM node.
+func (a *App) findBoxForNode(node *dom.Node) *layout.Box {
+	if a.rootBox == nil || node == nil {
+		return nil
+	}
+	return a.findBoxInTree(a.rootBox, node)
+}
+
+func (a *App) findBoxInTree(box *layout.Box, node *dom.Node) *layout.Box {
+	if box == nil {
+		return nil
+	}
+	if box.Node == node {
+		return box
+	}
+	for _, child := range box.Children {
+		if found := a.findBoxInTree(child, node); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // parseInt parses a string to int, returning 0 and an error on failure.

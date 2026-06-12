@@ -502,16 +502,27 @@ func (t *Terminal) parseMouseSGR(data []byte) {
 	switch btn & 0x03 {
 	case 0:
 		if isMotion {
-			// Pure mouse move (no button held) or left drag
-			// If no other button is held, treat as MouseNone
+			// Motion with no button = pure mouse move
+			// If bit 5 (motion) is set AND bits 0-1 are 0 with mode 1003,
+			// this could be a drag if a button was previously held.
+			// We treat it as MouseNone (pure move) and let the app detect drag
+			// via the combination of mouse press + subsequent moves.
 			mb = MouseNone
 		} else {
 			mb = MouseLeft
 		}
 	case 1:
-		mb = MouseMiddle
+		if isMotion {
+			mb = MouseNone // middle button drag — treated as move
+		} else {
+			mb = MouseMiddle
+		}
 	case 2:
-		mb = MouseRight
+		if isMotion {
+			mb = MouseNone // right button drag — treated as move
+		} else {
+			mb = MouseRight
+		}
 	}
 
 	// Check for mouse wheel

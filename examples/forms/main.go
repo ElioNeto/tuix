@@ -71,6 +71,11 @@ func main() {
 				</div>
 
 				<div class="field">
+					<label>Range</label>
+					<input type="range" value="45" />
+				</div>
+
+				<div class="field">
 					<label for="age">Age</label>
 					<input id="age" type="number" value="25" />
 				</div>
