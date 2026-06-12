@@ -81,20 +81,20 @@ func main() {
 		.muted {
 			color: #555;
 		}
-		/* Pulse styling: dim when not pulsing, bright when pulsing */
+		/* Pulse styling: toggle between visible and invisible */
 		.animate-pulse {
 			color: #555;
 		}
 		.animate-pulse[pulsing] {
-			color: #00d4aa;
+			color: #00ff00;
 			font-weight: bold;
 		}
-		/* Blink styling: shown when blinking attribute is present */
+		/* Blink styling: toggle between visible and invisible */
 		.animate-blink {
-			color: #555;
+			color: transparent;
 		}
 		.animate-blink[blinking] {
-			color: #00d4aa;
+			color: #00ff00;
 		}
 	`)
 
