@@ -537,11 +537,6 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 
 	contentY := box.ContentRect.Y
 
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return
-	}
-
 	// Apply font-size as line spacing: each "row" of text uses
 	// ceil(fontSize / 16) actual terminal rows.
 	lineSpan := 1
@@ -555,70 +550,87 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 		}
 	}
 
-	wordIndex := 0
+	// Split text by newlines to support forced line breaks.
+	// Each segment is a "paragraph" laid out separately.
+	segments := strings.Split(text, "\n")
+	globalRow := 0
 
-	for row := 0; wordIndex < len(words); row += lineSpan {
-		// Calculate how many words fit on this line and the line width
-		lineWords := make([]string, 0)
-		lineWidth := 0
-		for i := wordIndex; i < len(words); i++ {
-			w := words[i]
-			wlen := len(w)
-			if len(lineWords) > 0 && lineWidth+1+wlen > availableWidth {
-				break
-			}
-			lineWords = append(lineWords, w)
-			if lineWidth > 0 {
-				lineWidth++ // space
-			}
-			lineWidth += wlen
-		}
-
-		if len(lineWords) == 0 {
-			wordIndex++
+	for _, seg := range segments {
+		words := strings.Fields(seg)
+		if len(words) == 0 {
+			globalRow += lineSpan
 			continue
 		}
 
-		// Calculate start X based on alignment
-		startX := contentX
-		switch align {
-		case style.TextAlignCenter:
-			startX = contentX + (availableWidth-lineWidth)/2
-		case style.TextAlignRight:
-			startX = contentX + availableWidth - lineWidth
-		}
+		wordIndex := 0
+		linesInSegment := 0
+		for rowOffset := 0; wordIndex < len(words); rowOffset += lineSpan {
+			// Calculate how many words fit on this line and the line width
+			lineWords := make([]string, 0)
+			lineWidth := 0
+			for i := wordIndex; i < len(words); i++ {
+				w := words[i]
+				wlen := len(w)
+				if len(lineWords) > 0 && lineWidth+1+wlen > availableWidth {
+					break
+				}
+				lineWords = append(lineWords, w)
+				if lineWidth > 0 {
+					lineWidth++ // space
+				}
+				lineWidth += wlen
+			}
 
-		y := contentY + row
+			if len(lineWords) == 0 {
+				wordIndex++
+				continue
+			}
 
-		// Skip this line if it's not visible (check against clip stack)
-		if hasClip && !p.isVisible(startX, y) {
+			// Calculate start X based on alignment
+			startX := contentX
+			switch align {
+			case style.TextAlignCenter:
+				startX = contentX + (availableWidth-lineWidth)/2
+			case style.TextAlignRight:
+				startX = contentX + availableWidth - lineWidth
+			}
+
+			y := contentY + globalRow + rowOffset
+
+			// Skip this line if it's not visible (check against clip stack)
+			if hasClip && !p.isVisible(startX, y) {
+				wordIndex += len(lineWords)
+				linesInSegment++
+				continue
+			}
+
+			currentX := startX
+
+			for i, word := range lineWords {
+				if i > 0 {
+					// Space between words
+					if !hasClip || p.isVisible(currentX, y) {
+						if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+							p.Canvas.Set(currentX, y, ' ', fg, bg)
+						}
+					}
+					currentX++
+				}
+				for _, ch := range word {
+					if !hasClip || p.isVisible(currentX, y) {
+						if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+							p.Canvas.Set(currentX, y, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
+						}
+					}
+					currentX++
+				}
+			}
+
 			wordIndex += len(lineWords)
-			continue
+			linesInSegment++
 		}
 
-		currentX := startX
-
-		for i, word := range lineWords {
-			if i > 0 {
-				// Space between words
-				if !hasClip || p.isVisible(currentX, y) {
-					if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
-						p.Canvas.Set(currentX, y, ' ', fg, bg)
-					}
-				}
-				currentX++
-			}
-			for _, ch := range word {
-				if !hasClip || p.isVisible(currentX, y) {
-					if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
-						p.Canvas.Set(currentX, y, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
-					}
-				}
-				currentX++
-			}
-		}
-
-		wordIndex += len(lineWords)
+		globalRow += linesInSegment * lineSpan
 	}
 }
 

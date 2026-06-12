@@ -363,6 +363,13 @@ type App struct {
 	theme            Theme
 	useDesignSystem  bool
 	themeCSS         string // Generated CSS from the active theme
+
+	// Datalist state
+	datalistMap      map[string][]string // datalist id → option texts
+	datalistInput    *dom.Node           // Input currently showing a datalist dropdown
+	datalistFiltered []string            // Filtered suggestion list
+	datalistHighlight int                // Index of highlighted suggestion (-1 = none)
+	datalistOpen     bool                // Whether the suggestion dropdown is open
 }
 
 // New creates a new tuix application.
@@ -371,6 +378,7 @@ func New() *App {
 		layout:         layout.NewEngine(),
 		toastTimerChan: make(chan int, 64),
 		tooltipTimerChan: make(chan struct{}, 8),
+		datalistMap:    make(map[string][]string),
 	}
 }
 
@@ -738,6 +746,7 @@ func (a *App) Run() error {
 	// Initialize form state by scanning the DOM
 	a.initFormState(a.document)
 	a.buildFocusables(a.document)
+	a.buildDatalistMap(a.document)
 
 	// Create canvas
 	a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
@@ -911,6 +920,7 @@ func (a *App) handleEvent(event terminal.Event) {
 					a.focusNode(target.Node)
 					a.handleRangeClick(event.MouseX, target)
 				} else {
+					a.closeDatalist()
 					a.formFocused = -1
 				}
 				a.renderFrame()
@@ -1589,31 +1599,19 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		// Check if focused — show dropdown
 		isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
 		if isFocused && len(options) > 0 {
-			// Show dropdown with options below
-			displayLines := []string{" " + selected + " ▲▼"}
+			// Show dropdown with options below (using newlines for line breaks)
+			var display string
+			display += " " + selected + " ▲▼\n"
 			for _, opt := range options {
 				prefix := "  ○ "
 				if opt == selected {
 					prefix = "  ● "
 				}
-				displayLines = append(displayLines, prefix+opt)
+				display += prefix + opt + "\n"
 			}
-			// Replace children with multiple text nodes for the dropdown
-			oldChildren := node.Children
-			node.Children = nil
-			for _, line := range displayLines {
-				node.Children = append(node.Children, &dom.Node{
-					Type:   dom.NodeText,
-					Data:   line,
-					Parent: node,
-				})
-			}
-			// Restore original element children so they're available for re-renders
-			for _, child := range oldChildren {
-				if child.Type == dom.NodeElement {
-					node.Children = append(node.Children, child)
-				}
-			}
+			// Remove trailing newline
+			display = strings.TrimRight(display, "\n")
+			a.setInputTextChild(node, display)
 		} else {
 			a.setInputTextChild(node, " "+selected+" ")
 		}
@@ -1627,6 +1625,64 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 
 	case "meter":
 		a.prepareMeterDOM(node)
+	}
+
+	// Render datalist suggestion dropdown for focused inputs with an open datalist
+	if a.datalistOpen && a.datalistInput == node {
+		// Re-filter suggestions based on current value
+		options := a.getDatalistForInput(node)
+		if len(options) > 0 {
+			a.datalistFiltered = nil
+			val := strings.ToLower(a.formValues[node])
+			for _, opt := range options {
+				if val == "" || strings.HasPrefix(strings.ToLower(opt), val) {
+					a.datalistFiltered = append(a.datalistFiltered, opt)
+				}
+			}
+			if len(a.datalistFiltered) == 0 {
+				a.datalistFiltered = nil
+			}
+		}
+
+		if len(a.datalistFiltered) > 0 {
+			// Clamp highlight
+			if a.datalistHighlight < 0 {
+				a.datalistHighlight = 0
+			}
+			if a.datalistHighlight >= len(a.datalistFiltered) {
+				a.datalistHighlight = len(a.datalistFiltered) - 1
+			}
+
+			currentText := ""
+			for _, child := range node.Children {
+				if child.Type == dom.NodeText {
+					currentText = child.Data
+					break
+				}
+			}
+			// Append suggestions below the current value
+			var sb strings.Builder
+			sb.WriteString(currentText)
+			for i, opt := range a.datalistFiltered {
+				sb.WriteString("\n")
+				if i == a.datalistHighlight {
+					sb.WriteString("  ● ")
+				} else {
+					sb.WriteString("  ○ ")
+				}
+				sb.WriteString(opt)
+			}
+			// Update the text child
+			for _, child := range node.Children {
+				if child.Type == dom.NodeText {
+					child.Data = sb.String()
+					break
+				}
+			}
+		} else {
+			// No suggestions match — close the datalist
+			a.closeDatalist()
+		}
 	}
 
 	// Set placeholder-shown attribute for :placeholder-shown pseudo-class matching
@@ -1856,6 +1912,149 @@ func (a *App) collectFocusables(node *dom.Node) {
 	}
 }
 
+// buildDatalistMap scans the DOM for <datalist> elements and builds a map of
+// datalist id → option texts for use with <input list="id">.
+func (a *App) buildDatalistMap(node *dom.Node) {
+	if node == nil || node.Type != dom.NodeElement {
+		return
+	}
+	tag := strings.ToLower(node.Data)
+	if tag == "datalist" {
+		id := node.GetAttribute("id")
+		if id != "" {
+			options := make([]string, 0)
+			for _, child := range node.Children {
+				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+					for _, tc := range child.Children {
+						if tc.Type == dom.NodeText && strings.TrimSpace(tc.Data) != "" {
+							options = append(options, strings.TrimSpace(tc.Data))
+							break
+						}
+					}
+				}
+			}
+			if len(options) > 0 {
+				a.datalistMap[id] = options
+			}
+		}
+	}
+	for _, child := range node.Children {
+		a.buildDatalistMap(child)
+	}
+}
+
+// getDatalistForInput returns the datalist options linked to a given input,
+// or nil if no datalist is linked.
+func (a *App) getDatalistForInput(node *dom.Node) []string {
+	listAttr := node.GetAttribute("list")
+	if listAttr == "" {
+		return nil
+	}
+	options, ok := a.datalistMap[listAttr]
+	if !ok {
+		return nil
+	}
+	return options
+}
+
+// handleDatalistEdit processes keyboard events for datalist autocomplete.
+// It returns true if the event was consumed, false to fall through to normal text editing.
+func (a *App) handleDatalistEdit(event terminal.Event, node *dom.Node) bool {
+	options := a.getDatalistForInput(node)
+	if options == nil {
+		return false
+	}
+
+	switch event.Key {
+	case terminal.KeyDown:
+		// Open or navigate down in the datalist
+		if !a.datalistOpen {
+			// Open the dropdown with filtered suggestions
+			a.openDatalist(node)
+		} else {
+			// Move highlight down
+			a.datalistHighlight++
+			if a.datalistHighlight >= len(a.datalistFiltered) {
+				a.datalistHighlight = 0
+			}
+		}
+		a.renderFrame()
+		return true
+
+	case terminal.KeyUp:
+		if a.datalistOpen {
+			if a.datalistHighlight <= 0 {
+				// Close the dropdown if at top
+				a.closeDatalist()
+			} else {
+				a.datalistHighlight--
+			}
+			a.renderFrame()
+			return true
+		}
+		return false // fall through to normal cursor movement
+
+	case terminal.KeyEnter:
+		if a.datalistOpen && a.datalistHighlight >= 0 && a.datalistHighlight < len(a.datalistFiltered) {
+			// Select the highlighted suggestion
+			a.formValues[node] = a.datalistFiltered[a.datalistHighlight]
+			a.formCursors[node] = len([]rune(a.formValues[node]))
+			a.closeDatalist()
+			a.renderFrame()
+			return true
+		}
+		// Enter while datalist is closed — treat normally (fall through)
+		return false
+
+	case terminal.KeyEscape:
+		if a.datalistOpen {
+			a.closeDatalist()
+			a.renderFrame()
+			return true
+		}
+		return false
+
+	default:
+		// For typing keys, don't close the datalist — it will be re-filtered
+		// in prepareFormDOM on the next render. Fall through to handleTextEdit.
+		return false
+	}
+}
+
+// openDatalist filters the datalist options by the current input value and shows them.
+func (a *App) openDatalist(node *dom.Node) {
+	options := a.getDatalistForInput(node)
+	if options == nil {
+		return
+	}
+
+	a.datalistInput = node
+	a.datalistFiltered = nil
+
+	// Filter by prefix match (case-insensitive)
+	val := strings.ToLower(a.formValues[node])
+	for _, opt := range options {
+		if val == "" || strings.HasPrefix(strings.ToLower(opt), val) {
+			a.datalistFiltered = append(a.datalistFiltered, opt)
+		}
+	}
+
+	if len(a.datalistFiltered) == 0 {
+		a.datalistFiltered = options
+	}
+
+	a.datalistHighlight = 0
+	a.datalistOpen = true
+}
+
+// closeDatalist closes the datalist suggestion dropdown.
+func (a *App) closeDatalist() {
+	a.datalistOpen = false
+	a.datalistInput = nil
+	a.datalistFiltered = nil
+	a.datalistHighlight = -1
+}
+
 // handleFormEvent processes keyboard events for focused form controls.
 // Returns true if the event was consumed by a form control.
 func (a *App) handleFormEvent(event terminal.Event) bool {
@@ -1994,6 +2193,11 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 // handleTextEdit processes keyboard input for text fields.
 // Returns true if the event was consumed.
 func (a *App) handleTextEdit(event terminal.Event, node *dom.Node) bool {
+	// Check for datalist autocomplete first
+	if a.handleDatalistEdit(event, node) {
+		return true
+	}
+
 	// If readonly, don't allow editing but still allow cursor navigation
 	if node.HasAttribute("readonly") {
 		switch event.Key {
@@ -2081,7 +2285,8 @@ func (a *App) handleTextEdit(event terminal.Event, node *dom.Node) bool {
 		return false
 
 	case terminal.KeyEscape:
-		// Escape — lose focus
+		// Escape — lose focus (datalist closing is handled by handleDatalistEdit)
+		a.closeDatalist()
 		a.formFocused = -1
 		a.renderFrame()
 		return true
@@ -2738,6 +2943,8 @@ func (a *App) focusByIndex(idx int) {
 		a.onBlur(a.formFocusables[old])
 	}
 	a.formFocused = idx
+	// Close any open datalist when focus changes
+	a.closeDatalist()
 	if idx >= 0 && idx < len(a.formFocusables) && a.onFocus != nil {
 		a.onFocus(a.formFocusables[idx])
 	}

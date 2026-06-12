@@ -100,11 +100,34 @@ func main() {
 					<input type="date" />
 				</div>
 
+				<div class="field">
+					<label>Autocomplete</label>
+					<input type="text" list="langs" placeholder="Type a language..." />
+				</div>
+
 				<div class="button-row">
 					<button class="btn primary" type="submit">Login</button>
 					<button class="btn secondary" type="reset">Reset</button>
 					<button class="btn" type="button" disabled>Disabled</button>
 				</div>
+
+				<datalist id="langs">
+					<option>Go</option>
+					<option>GoLand</option>
+					<option>Python</option>
+					<option>JavaScript</option>
+					<option>TypeScript</option>
+					<option>Rust</option>
+					<option>Ruby</option>
+					<option>Java</option>
+					<option>Kotlin</option>
+					<option>Swift</option>
+					<option>Scala</option>
+					<option>Elixir</option>
+					<option>Elm</option>
+					<option>Haskell</option>
+					<option>Clojure</option>
+				</datalist>
 			</form>
 
 			<p class="hint">Tab to navigate · Type to edit · Enter/Space to toggle · Esc to clear search or unfocus · q to quit</p>
