@@ -176,6 +176,29 @@ const designSystemCSS = `
 .text-center { text-align: center; }
 .text-bold { font-weight: bold; }
 
+/* Typography scale */
+.text-xs { font-size: 8; }
+.text-sm { font-size: 12; }
+.text-base { font-size: 16; }
+.text-lg { font-size: 20; }
+.text-xl { font-size: 24; }
+.text-xxl { font-size: 32; }
+
+/* Color utilities */
+.text-primary   { color: #00d4aa; }
+.text-secondary { color: #0f3460; }
+.text-accent    { color: #e94560; }
+.text-success   { color: #2ecc71; }
+.text-warning   { color: #f39c12; }
+.text-error     { color: #e74c3c; }
+.text-muted     { color: #555; }
+.bg-primary     { background-color: #00d4aa; }
+.bg-secondary   { background-color: #0f3460; }
+.bg-accent      { background-color: #e94560; }
+.bg-success     { background-color: #2ecc71; }
+.bg-warning     { background-color: #f39c12; }
+.bg-error       { background-color: #e74c3c; }
+
 /* Spacing utilities */
 .p-1  { padding: 1; }
 .p-2  { padding: 2; }

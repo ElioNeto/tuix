@@ -721,6 +721,32 @@ Theme colors are applied as CSS utility classes — `.bg-primary`, `.text-muted`
 | `.mx-1` / `.mx-2` | Margin left and right |
 | `.my-1` / `.my-2` | Margin top and bottom |
 
+### Typography Utilities
+
+| Class | `font-size` |
+|-------|-------------|
+| `.text-xs` | 8 |
+| `.text-sm` | 12 |
+| `.text-base` | 16 |
+| `.text-lg` | 20 |
+| `.text-xl` | 24 |
+| `.text-xxl` | 32 |
+
+### Color Utilities
+
+| Class | Description |
+|-------|-------------|
+| `.text-primary` / `.text-accent` / `.text-success` / `.text-warning` / `.text-error` / `.text-muted` | Text color by semantic role |
+| `.bg-primary` / `.bg-secondary` / `.bg-accent` / `.bg-success` / `.bg-warning` / `.bg-error` | Background color by semantic role |
+
+### Animation Classes
+
+| Class | Description |
+|-------|-------------|
+| `.animate-spin` | Cycles through `\| / - \\` spinner characters |
+| `.animate-pulse` | Toggles `[pulsing]` attribute for CSS-driven dim/bright effect |
+| `.animate-blink` | Toggles `[blinking]` attribute for blink effect |
+
 ---
 
 ## Roadmap
