@@ -194,12 +194,21 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 
 	// Resolve width
 	box.ComputedWidth = resolveLength(box.Style.Width, float64(parentWidth))
-	if box.ComputedWidth == 0 {
-		// Default: fill parent
+	if box.ComputedWidth == 0 || box.Style.Width.Unit == style.LengthPercent {
+		// Default: fill parent (auto or 100%)
 		box.ComputedWidth = float64(parentWidth) -
 			box.Margin.Left - box.Margin.Right -
 			box.Border.Left - box.Border.Right -
 			box.Padding.Left - box.Padding.Right
+	} else if box.ComputedWidth > 0 {
+		// Explicit width (px, em, etc): clamp to available space
+		available := float64(parentWidth) -
+			box.Margin.Left - box.Margin.Right -
+			box.Border.Left - box.Border.Right -
+			box.Padding.Left - box.Padding.Right
+		if box.ComputedWidth > available {
+			box.ComputedWidth = available
+		}
 	}
 	if box.ComputedWidth < 0 {
 		box.ComputedWidth = 0
