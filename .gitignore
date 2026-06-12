@@ -1,35 +1,25 @@
 # Binaries
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
 *.test
 *.out
-/tuix
-/tuix.exe
-counter
 
-# Test binary, built with `go test -c`
-*.test
+# Example binaries (built with go build ./examples/<name>/)
+/animations
+/counter
+/design-system
+/flexbox
+/focus
+/forms
+/hover
+/images
+/inline
+/modal
+/scrolling
+/toast
+/zindex
 
-# Output of the go coverage tool
-*.out
-
-# Dependency directories
-vendor/
-
-# IDE files
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
-.DS_Store
-
-# Teamcode (opencode) internal config
-.teamcode/
-
-# Example binaries (built with `go build ./examples/...`)
-examples/*/main
-examples/*/main.exe
