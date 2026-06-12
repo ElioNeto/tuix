@@ -210,6 +210,158 @@ func normalizeHue(h float64) float64 {
 	return h
 }
 
+// Lerp linearly interpolates between two colors by factor t (0=color a, 1=color b).
+func Lerp(a, b Color, t float64) Color {
+	if t <= 0 { return a }
+	if t >= 1 { return b }
+	return Color{Type: ColorTrue,
+		R: uint8(float64(a.R)*(1-t) + float64(b.R)*t),
+		G: uint8(float64(a.G)*(1-t) + float64(b.G)*t),
+		B: uint8(float64(a.B)*(1-t) + float64(b.B)*t),
+	}
+}
+
+// Darken reduces the brightness of a color by the given percentage (0-100).
+func Darken(c Color, amount float64) Color {
+	if amount <= 0 { return c }
+	if amount > 100 { amount = 100 }
+	h, s, l := rgbToHSL(c.R, c.G, c.B)
+	l -= l * amount / 100
+	if l < 0 { l = 0 }
+	return HSL(h, s, l)
+}
+
+// Lighten increases the brightness of a color by the given percentage (0-100).
+func Lighten(c Color, amount float64) Color {
+	if amount <= 0 { return c }
+	if amount > 100 { amount = 100 }
+	h, s, l := rgbToHSL(c.R, c.G, c.B)
+	l += (100 - l) * amount / 100
+	if l > 100 { l = 100 }
+	return HSL(h, s, l)
+}
+
+// Saturate increases color saturation by percentage (0-100).
+func Saturate(c Color, amount float64) Color {
+	if amount <= 0 { return c }
+	h, s, l := rgbToHSL(c.R, c.G, c.B)
+	s += (100 - s) * amount / 100
+	if s > 100 { s = 100 }
+	return HSL(h, s, l)
+}
+
+// Desaturate reduces color saturation by percentage (0-100).
+func Desaturate(c Color, amount float64) Color {
+	if amount <= 0 { return c }
+	h, s, l := rgbToHSL(c.R, c.G, c.B)
+	s -= s * amount / 100
+	if s < 0 { s = 0 }
+	return HSL(h, s, l)
+}
+
+// RotateHue shifts the hue by the given degrees (can be negative).
+func RotateHue(c Color, degrees float64) Color {
+	h, s, l := rgbToHSL(c.R, c.G, c.B)
+	h += degrees
+	return HSL(h, s, l)
+}
+
+// Grayscale converts a color to grayscale using luminance weights.
+func Grayscale(c Color) Color {
+	lum := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+	g := uint8(lum)
+	return Color{Type: ColorTrue, R: g, G: g, B: g}
+}
+
+// Invert inverts all RGB channels (255 - value).
+func Invert(c Color) Color {
+	return Color{Type: ColorTrue, R: 255 - c.R, G: 255 - c.G, B: 255 - c.B}
+}
+
+// Luminance returns the relative luminance of a color (WCAG formula).
+func Luminance(c Color) float64 {
+	r := linearize(float64(c.R) / 255)
+	g := linearize(float64(c.G) / 255)
+	b := linearize(float64(c.B) / 255)
+	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+// linearize applies the sRGB linearization curve for luminance calculation.
+func linearize(ch float64) float64 {
+	if ch <= 0.04045 {
+		return ch / 12.92
+	}
+	return ((ch + 0.055) / 1.055) * ((ch + 0.055) / 1.055)
+}
+
+// ContrastRatio calculates the WCAG contrast ratio between two colors.
+// Returns a value from 1:1 (no contrast) to 21:1 (maximum).
+func ContrastRatio(fg, bg Color) float64 {
+	l1 := Luminance(fg)
+	l2 := Luminance(bg)
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return (l1 + 0.05) / (l2 + 0.05)
+}
+
+// rgbToHSL converts RGB (0-255) to HSL (hue 0-360, sat 0-100, light 0-100).
+func rgbToHSL(r, g, b uint8) (float64, float64, float64) {
+	rf := float64(r) / 255
+	gf := float64(g) / 255
+	bf := float64(b) / 255
+
+	max := maxVal(rf, gf, bf)
+	min := minVal(rf, gf, bf)
+	l := (max + min) / 2
+
+	if max == min {
+		return 0, 0, l * 100
+	}
+
+	d := max - min
+	var s float64
+	if l > 0.5 {
+		s = d / (2 - max - min)
+	} else {
+		s = d / (max + min)
+	}
+
+	var h float64
+	switch {
+	case max == rf:
+		h = (gf - bf) / d
+		if gf < bf {
+			h += 6
+		}
+	case max == gf:
+		h = (bf-rf)/d + 2
+	default:
+		h = (rf-gf)/d + 4
+	}
+	h *= 60
+
+	return h, s * 100, l * 100
+}
+
+func maxVal(a, b, c float64) float64 {
+	if a > b {
+		if a > c { return a }
+		return c
+	}
+	if b > c { return b }
+	return c
+}
+
+func minVal(a, b, c float64) float64 {
+	if a < b {
+		if a < c { return a }
+		return c
+	}
+	if b < c { return b }
+	return c
+}
+
 // Predefined common colors as exported constants for convenience.
 var (
 	Black       = Color{Type: ColorTrue, R: 0, G: 0, B: 0}

@@ -241,12 +241,132 @@ func TestHSLMagenta(t *testing.T) {
 }
 
 func TestHSLLightness(t *testing.T) {
-	// 75% lightness should be lighter than 25%
 	dark := HSL(0, 100, 25)
 	light := HSL(0, 100, 75)
-	// At 25% lightness, red should be ~128
-	// At 75% lightness, red should be ~255
 	if dark.R >= light.R {
 		t.Fatalf("expected dark R < light R: %d >= %d", dark.R, light.R)
 	}
+}
+
+func TestLerp(t *testing.T) {
+	black := Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+	white := Color{Type: ColorTrue, R: 255, G: 255, B: 255}
+	mid := Lerp(black, white, 0.5)
+	if mid.R != 127 || mid.G != 127 || mid.B != 127 {
+		t.Fatalf("Lerp(black,white,0.5) expected (127,127,127), got (%d,%d,%d)", mid.R, mid.G, mid.B)
+	}
+}
+
+func TestLerpEdgeCases(t *testing.T) {
+	a := Color{Type: ColorTrue, R: 100, G: 100, B: 100}
+	b := Color{Type: ColorTrue, R: 200, G: 200, B: 200}
+	if Lerp(a, b, 0).R != 100 { t.Fatal("Lerp(a,b,0) should return a") }
+	if Lerp(a, b, 1).R != 200 { t.Fatal("Lerp(a,b,1) should return b") }
+}
+
+func TestDarken(t *testing.T) {
+	c := Color{Type: ColorTrue, R: 200, G: 100, B: 50}
+	dark := Darken(c, 50)
+	// Darken should change the color (not produce same values)
+	if dark.R == c.R && dark.G == c.G && dark.B == c.B {
+		t.Fatal("Darken(50%) should change the color")
+	}
+	// Darkened color should have lower luminance
+	if Luminance(dark) >= Luminance(c) {
+		t.Fatal("Darken(50%) should reduce luminance")
+	}
+}
+
+func TestLighten(t *testing.T) {
+	c := Color{Type: ColorTrue, R: 100, G: 50, B: 20}
+	light := Lighten(c, 50)
+	if light.R <= c.R || light.G <= c.G || light.B <= c.B {
+		t.Fatal("Lighten(50%) should increase all channels")
+	}
+}
+
+func TestGrayscale(t *testing.T) {
+	c := Color{Type: ColorTrue, R: 100, G: 150, B: 200}
+	g := Grayscale(c)
+	if g.R != g.G || g.G != g.B {
+		t.Fatal("Grayscale should produce equal R,G,B")
+	}
+}
+
+func TestInvert(t *testing.T) {
+	c := Color{Type: ColorTrue, R: 100, G: 150, B: 200}
+	inv := Invert(c)
+	if inv.R != 155 || inv.G != 105 || inv.B != 55 {
+		t.Fatalf("Invert(100,150,200) expected (155,105,55), got (%d,%d,%d)", inv.R, inv.G, inv.B)
+	}
+}
+
+func TestContrastRatio(t *testing.T) {
+	black := Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+	white := Color{Type: ColorTrue, R: 255, G: 255, B: 255}
+	ratio := ContrastRatio(black, white)
+	if ratio < 20 || ratio > 22 {
+		t.Fatalf("ContrastRatio(black,white) expected ~21, got %f", ratio)
+	}
+}
+
+func TestSaturate(t *testing.T) {
+	gray := Color{Type: ColorTrue, R: 128, G: 128, B: 128}
+	sat := Saturate(gray, 100)
+	// A gray with 100% saturation should become a pure color
+	if sat.R == sat.G && sat.G == sat.B {
+		t.Fatal("Saturate(gray,100) should produce a non-gray color")
+	}
+}
+
+func TestDesaturate(t *testing.T) {
+	red := Color{Type: ColorTrue, R: 255, G: 0, B: 0}
+	desat := Desaturate(red, 100)
+	// 100% desaturated red should be gray
+	if desat.R != desat.G || desat.G != desat.B {
+		t.Fatal("Desaturate(red,100) should produce gray")
+	}
+}
+
+func TestLuminance(t *testing.T) {
+	black := Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+	white := Color{Type: ColorTrue, R: 255, G: 255, B: 255}
+	if Luminance(black) != 0 {
+		t.Fatal("Luminance(black) should be 0")
+	}
+	if Luminance(white) != 1 {
+		t.Fatal("Luminance(white) should be 1")
+	}
+}
+
+func TestRotateHue(t *testing.T) {
+	red := Color{Type: ColorTrue, R: 255, G: 0, B: 0}
+	green := RotateHue(red, 120)
+	if green.R != 0 || green.G != 255 || green.B != 0 {
+		t.Fatalf("RotateHue(red,120) expected (0,255,0), got (%d,%d,%d)", green.R, green.G, green.B)
+	}
+}
+
+func TestHSLToRGBRoundtrip(t *testing.T) {
+	// Test that converting RGB→HSL→RGB preserves the color
+	colors := []Color{
+		{Type: ColorTrue, R: 255, G: 0, B: 0},
+		{Type: ColorTrue, R: 0, G: 255, B: 0},
+		{Type: ColorTrue, R: 0, G: 0, B: 255},
+		{Type: ColorTrue, R: 128, G: 128, B: 128},
+		{Type: ColorTrue, R: 255, G: 255, B: 0},
+	}
+	for _, c := range colors {
+		h, s, l := rgbToHSL(c.R, c.G, c.B)
+		back := HSL(h, s, l)
+		if absDiff(back.R, c.R) > 2 || absDiff(back.G, c.G) > 2 || absDiff(back.B, c.B) > 2 {
+			t.Fatalf("roundtrip RGB→HSL→RGB failed for (%d,%d,%d): got (%d,%d,%d)",
+				c.R, c.G, c.B, back.R, back.G, back.B)
+		}
+	}
+}
+
+func absDiff(a, b uint8) int {
+	if a > b { return int(a) - int(b) }
+	return int(b) - int(a)
 }
