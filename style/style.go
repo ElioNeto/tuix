@@ -43,6 +43,20 @@ type ComputedStyle struct {
 	Visibility     VisibilityType
 	WhiteSpace     WhiteSpaceType
 	LineHeight     Length
+
+	// Flexbox properties
+	FlexDirection  FlexDirectionType
+	FlexWrap       FlexWrapType
+	JustifyContent JustifyContentType
+	AlignItems     AlignItemsType
+	AlignContent   AlignContentType
+	AlignSelf      AlignSelfType
+	FlexGrow       float64
+	FlexShrink     float64
+	FlexBasis      Length
+	Order          int
+	RowGap         Length
+	ColumnGap      Length
 }
 
 // DisplayType represents the CSS display property.
@@ -162,6 +176,72 @@ const (
 	VisibilityCollapse
 )
 
+// FlexDirectionType represents flex-direction values.
+type FlexDirectionType int
+
+const (
+	FlexDirectionRow FlexDirectionType = iota
+	FlexDirectionRowReverse
+	FlexDirectionColumn
+	FlexDirectionColumnReverse
+)
+
+// FlexWrapType represents flex-wrap values.
+type FlexWrapType int
+
+const (
+	FlexWrapNoWrap FlexWrapType = iota
+	FlexWrapWrap
+	FlexWrapWrapReverse
+)
+
+// JustifyContentType represents justify-content values.
+type JustifyContentType int
+
+const (
+	JustifyContentFlexStart JustifyContentType = iota
+	JustifyContentFlexEnd
+	JustifyContentCenter
+	JustifyContentSpaceBetween
+	JustifyContentSpaceAround
+	JustifyContentSpaceEvenly
+)
+
+// AlignItemsType represents align-items / align-self values.
+type AlignItemsType int
+
+const (
+	AlignItemsStretch AlignItemsType = iota
+	AlignItemsFlexStart
+	AlignItemsFlexEnd
+	AlignItemsCenter
+	AlignItemsBaseline
+)
+
+// AlignContentType represents align-content values.
+type AlignContentType int
+
+const (
+	AlignContentStretch AlignContentType = iota
+	AlignContentFlexStart
+	AlignContentFlexEnd
+	AlignContentCenter
+	AlignContentSpaceBetween
+	AlignContentSpaceAround
+)
+
+// AlignSelfType represents the align-self property.
+type AlignSelfType int
+
+const (
+	AlignSelfAuto AlignSelfType = iota
+	AlignSelfFlexStart
+	AlignSelfFlexEnd
+	AlignSelfCenter
+	AlignSelfStretch
+	AlignSelfBaseline
+)
+
 // WhiteSpaceType represents whitespace handling.
 type WhiteSpaceType int
 
@@ -190,6 +270,18 @@ func DefaultStyle() ComputedStyle {
 		MinHeight:  Length{Unit: LengthAuto},
 		MaxWidth:   Length{Unit: LengthNone},
 		MaxHeight:  Length{Unit: LengthNone},
+
+		// Flex defaults
+		FlexDirection:  FlexDirectionRow,
+		FlexWrap:       FlexWrapNoWrap,
+		JustifyContent: JustifyContentFlexStart,
+		AlignItems:     AlignItemsStretch,
+		AlignContent:   AlignContentFlexStart,
+		AlignSelf:      AlignSelfAuto,
+		FlexGrow:       0,
+		FlexShrink:     1,
+		FlexBasis:      Length{Unit: LengthAuto},
+		Order:          0,
 	}
 }
 
@@ -682,6 +774,168 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 
 	case "line-height":
 		style.LineHeight = cssLengthToStyleLength(decl.Value)
+
+	// --- Flexbox properties ---
+	case "flex-direction":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "row":
+			style.FlexDirection = FlexDirectionRow
+		case "row-reverse":
+			style.FlexDirection = FlexDirectionRowReverse
+		case "column":
+			style.FlexDirection = FlexDirectionColumn
+		case "column-reverse":
+			style.FlexDirection = FlexDirectionColumnReverse
+		}
+
+	case "flex-wrap":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "nowrap":
+			style.FlexWrap = FlexWrapNoWrap
+		case "wrap":
+			style.FlexWrap = FlexWrapWrap
+		case "wrap-reverse":
+			style.FlexWrap = FlexWrapWrapReverse
+		}
+
+	case "flex-flow":
+		// Shorthand for flex-direction and flex-wrap
+		parts := valueList(decl.Value)
+		for _, p := range parts {
+			switch strings.ToLower(p.Keyword) {
+			case "row":
+				style.FlexDirection = FlexDirectionRow
+			case "row-reverse":
+				style.FlexDirection = FlexDirectionRowReverse
+			case "column":
+				style.FlexDirection = FlexDirectionColumn
+			case "column-reverse":
+				style.FlexDirection = FlexDirectionColumnReverse
+			case "nowrap":
+				style.FlexWrap = FlexWrapNoWrap
+			case "wrap":
+				style.FlexWrap = FlexWrapWrap
+			case "wrap-reverse":
+				style.FlexWrap = FlexWrapWrapReverse
+			}
+		}
+
+	case "justify-content":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "flex-start":
+			style.JustifyContent = JustifyContentFlexStart
+		case "flex-end":
+			style.JustifyContent = JustifyContentFlexEnd
+		case "center":
+			style.JustifyContent = JustifyContentCenter
+		case "space-between":
+			style.JustifyContent = JustifyContentSpaceBetween
+		case "space-around":
+			style.JustifyContent = JustifyContentSpaceAround
+		case "space-evenly":
+			style.JustifyContent = JustifyContentSpaceEvenly
+		}
+
+	case "align-items":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "stretch":
+			style.AlignItems = AlignItemsStretch
+		case "flex-start":
+			style.AlignItems = AlignItemsFlexStart
+		case "flex-end":
+			style.AlignItems = AlignItemsFlexEnd
+		case "center":
+			style.AlignItems = AlignItemsCenter
+		case "baseline":
+			style.AlignItems = AlignItemsBaseline
+		}
+
+	case "align-content":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "stretch":
+			style.AlignContent = AlignContentStretch
+		case "flex-start":
+			style.AlignContent = AlignContentFlexStart
+		case "flex-end":
+			style.AlignContent = AlignContentFlexEnd
+		case "center":
+			style.AlignContent = AlignContentCenter
+		case "space-between":
+			style.AlignContent = AlignContentSpaceBetween
+		case "space-around":
+			style.AlignContent = AlignContentSpaceAround
+		}
+
+	case "align-self":
+		switch strings.ToLower(decl.Value.Keyword) {
+		case "auto":
+			style.AlignSelf = AlignSelfAuto
+		case "flex-start":
+			style.AlignSelf = AlignSelfFlexStart
+		case "flex-end":
+			style.AlignSelf = AlignSelfFlexEnd
+		case "center":
+			style.AlignSelf = AlignSelfCenter
+		case "stretch":
+			style.AlignSelf = AlignSelfStretch
+		case "baseline":
+			style.AlignSelf = AlignSelfBaseline
+		}
+
+	case "flex-grow":
+		if decl.Value.Type == css.ValueNumber {
+			style.FlexGrow = decl.Value.Number
+		}
+
+	case "flex-shrink":
+		if decl.Value.Type == css.ValueNumber {
+			style.FlexShrink = decl.Value.Number
+		}
+
+	case "flex-basis":
+		style.FlexBasis = cssLengthToStyleLength(decl.Value)
+
+	case "flex":
+		// Shorthand: flex-grow flex-shrink flex-basis
+		parts := valueList(decl.Value)
+		if len(parts) > 0 {
+			// First value: flex-grow
+			if parts[0].Type == css.ValueNumber {
+				style.FlexGrow = parts[0].Number
+			}
+		}
+		if len(parts) > 1 {
+			// Second value: flex-shrink
+			if parts[1].Type == css.ValueNumber {
+				style.FlexShrink = parts[1].Number
+			}
+		}
+		if len(parts) > 2 {
+			// Third value: flex-basis
+			style.FlexBasis = cssLengthToStyleLength(parts[2])
+		}
+
+	case "order":
+		if decl.Value.Type == css.ValueNumber {
+			style.Order = int(decl.Value.Number)
+		}
+
+	case "gap":
+		// Gap shorthand: row-gap column-gap
+		vals := lengthValues(decl.Value)
+		if len(vals) > 0 {
+			style.RowGap = vals[0]
+			style.ColumnGap = vals[0]
+		}
+		if len(vals) > 1 {
+			style.ColumnGap = vals[1]
+		}
+
+	case "row-gap":
+		style.RowGap = cssLengthToStyleLength(decl.Value)
+
+	case "column-gap":
+		style.ColumnGap = cssLengthToStyleLength(decl.Value)
 	}
 }
 

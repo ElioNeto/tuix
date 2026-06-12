@@ -8,6 +8,7 @@
 *.out
 /tuix
 /tuix.exe
+counter
 
 # Test binary, built with `go test -c`
 *.test

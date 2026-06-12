@@ -6,6 +6,7 @@
 package layout
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/elioneto/tuix/dom"
@@ -22,6 +23,7 @@ const (
 	BoxAnonymous
 	BoxText
 	BoxRoot
+	BoxFlex
 )
 
 // Box represents a rectangular layout box in the formatting tree.
@@ -112,8 +114,8 @@ func (e *LayoutEngine) Layout(doc *dom.Node, resolvers map[*dom.Node]style.Compu
 		Height: e.Root.Rect.Height,
 	}
 
-	// Layout children
-	e.layoutBlock(e.Root)
+	// Layout children using the correct algorithm per box type
+	e.layoutBox(e.Root)
 	e.calculatePositions(e.Root, 0, 0)
 
 	return e.Root
@@ -159,6 +161,10 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 		box.Type = BoxInline
 	}
 
+	if s.Display == style.DisplayFlex {
+		box.Type = BoxFlex
+	}
+
 	// Set box model edges from computed style
 	box.Margin.Top = resolveLength(s.MarginTop, e.ViewWidth)
 	box.Margin.Right = resolveLength(s.MarginRight, e.ViewWidth)
@@ -187,6 +193,25 @@ func (e *LayoutEngine) buildBoxTree(node *dom.Node, resolvers map[*dom.Node]styl
 	// (handled by text nodes above)
 
 	return box
+}
+
+// layoutBox dispatches layout to the correct algorithm based on box type.
+func (e *LayoutEngine) layoutBox(box *Box) {
+	if box == nil {
+		return
+	}
+
+	// Text boxes and inline boxes are sized by their parent; skip direct layout.
+	if box.Type == BoxText || box.Type == BoxInline {
+		return
+	}
+
+	switch box.Type {
+	case BoxFlex:
+		e.layoutFlex(box)
+	default:
+		e.layoutBlock(box)
+	}
 }
 
 // layoutBlock performs block layout on a box and its children.
@@ -304,7 +329,7 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			child.Padding.Top + child.Padding.Bottom)
 
 		// Layout children of this child (recursive)
-		e.layoutBlock(child)
+		e.layoutBox(child)
 
 		cursorY += float64(child.Rect.Height)
 	}
@@ -319,6 +344,501 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			box.Padding.Top - box.Padding.Bottom -
 			box.Border.Top - box.Border.Bottom)
 	}
+}
+
+// layoutFlex performs flex layout on a flex container and its children.
+// It implements a simplified flexbox algorithm that handles:
+// - flex-direction, flex-wrap, justify-content
+// - align-items, align-self (stretch, flex-start, flex-end, center)
+// - flex-grow, flex-shrink, flex-basis
+// - order, gap
+func (e *LayoutEngine) layoutFlex(container *Box) {
+	if container == nil {
+		return
+	}
+
+	parentWidth := float64(container.Rect.Width)
+	if container.Parent != nil {
+		parentWidth = float64(container.Parent.ContentRect.Width)
+	}
+	if parentWidth <= 0 {
+		parentWidth = e.ViewWidth
+	}
+
+	// Resolve container width
+	container.ComputedWidth = resolveLength(container.Style.Width, parentWidth)
+	if container.ComputedWidth == 0 || container.Style.Width.Unit == style.LengthPercent {
+		container.ComputedWidth = parentWidth -
+			container.Margin.Left - container.Margin.Right -
+			container.Border.Left - container.Border.Right -
+			container.Padding.Left - container.Padding.Right
+	}
+	if container.ComputedWidth < 0 {
+		container.ComputedWidth = 0
+	}
+
+	// Resolve container height (may be 0 = auto, adjusted later)
+	container.ComputedHeight = resolveLength(container.Style.Height, e.ViewHeight)
+
+	container.Rect.Width = int(container.BorderWidth())
+	container.Rect.Height = int(container.BorderHeight())
+	container.ContentRect.Width = int(container.ComputedWidth)
+	container.ContentRect.Height = int(container.ComputedHeight)
+
+	// Determine main and cross axis
+	mainIsX := container.Style.FlexDirection == style.FlexDirectionRow ||
+		container.Style.FlexDirection == style.FlexDirectionRowReverse
+	reverse := container.Style.FlexDirection == style.FlexDirectionRowReverse ||
+		container.Style.FlexDirection == style.FlexDirectionColumnReverse
+
+	// Content area dimensions (inside padding+border)
+	contentX := container.Border.Left + container.Padding.Left
+	contentY := container.Border.Top + container.Padding.Top
+	contentWidth := container.ComputedWidth
+	contentHeight := container.ComputedHeight
+
+	// Resolve gaps
+	gapMain := resolveLength(container.Style.ColumnGap, contentWidth)
+	gapCross := resolveLength(container.Style.RowGap, contentHeight)
+	if !mainIsX {
+		gapMain = resolveLength(container.Style.RowGap, contentHeight)
+		gapCross = resolveLength(container.Style.ColumnGap, contentWidth)
+	}
+
+	// Collect and sort flex items
+	items := make([]*Box, 0, len(container.Children))
+	for _, child := range container.Children {
+		if child.Style.Display == style.DisplayNone {
+			continue
+		}
+		items = append(items, child)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].Style.Order < items[j].Style.Order
+	})
+
+	// Helper: get/set main size and position for a box
+	getMainSize := func(b *Box) float64 {
+		if mainIsX {
+			return b.ComputedWidth
+		}
+		return b.ComputedHeight
+	}
+	setMainSize := func(b *Box, v float64) {
+		if mainIsX {
+			b.ComputedWidth = v
+		} else {
+			b.ComputedHeight = v
+		}
+	}
+	getCrossSize := func(b *Box) float64 {
+		if !mainIsX {
+			return b.ComputedWidth
+		}
+		return b.ComputedHeight
+	}
+	setCrossSize := func(b *Box, v float64) {
+		if !mainIsX {
+			b.ComputedWidth = v
+		} else {
+			b.ComputedHeight = v
+		}
+	}
+	getMainMarginStart := func(b *Box) float64 {
+		if mainIsX {
+			return b.Margin.Left
+		}
+		return b.Margin.Top
+	}
+	getMainMarginEnd := func(b *Box) float64 {
+		if mainIsX {
+			return b.Margin.Right
+		}
+		return b.Margin.Bottom
+	}
+	getCrossMarginStart := func(b *Box) float64 {
+		if !mainIsX {
+			return b.Margin.Left
+		}
+		return b.Margin.Top
+	}
+	getCrossMarginEnd := func(b *Box) float64 {
+		if !mainIsX {
+			return b.Margin.Right
+		}
+		return b.Margin.Bottom
+	}
+
+	// Determine the container's main size (available for flex items)
+	containerMainSize := contentWidth
+	if !mainIsX {
+		containerMainSize = contentHeight
+	}
+
+	// Phase 1: Determine flex bases and hypothetical main sizes
+	hypoMainSizes := make([]float64, len(items))
+	for i, item := range items {
+		// Resolve width and height if explicitly set
+		item.ComputedWidth = resolveLength(item.Style.Width, contentWidth)
+		item.ComputedHeight = resolveLength(item.Style.Height, contentHeight)
+
+		// Determine flex basis — the initial main size before growing/shrinking
+		var flexBasis float64
+		if item.Style.FlexBasis.Unit != style.LengthAuto {
+			flexBasis = resolveLength(item.Style.FlexBasis, containerMainSize)
+		} else {
+			// When flex-basis is auto, use the item's main-size property (width or height)
+			flexBasis = getMainSize(item)
+		}
+
+		// Apply min/max constraints to flex basis
+		// TODO: handle min-width/min-height, max-width/max-height
+
+		hypoMainSizes[i] = flexBasis
+	}
+
+	// Calculate total hypothetical main size (including gaps)
+	totalHypoMain := 0.0
+	for i, item := range items {
+		// Include margins in the hypothetical size
+		totalHypoMain += hypoMainSizes[i] + getMainMarginStart(item) + getMainMarginEnd(item)
+		if i > 0 {
+			totalHypoMain += gapMain
+		}
+	}
+
+	// Phase 2: Distribute free space (flex-grow / flex-shrink)
+	freeSpace := containerMainSize - totalHypoMain
+
+	var totalGrow, totalShrink float64
+	for _, item := range items {
+		totalGrow += item.Style.FlexGrow
+		totalShrink += item.Style.FlexShrink
+	}
+
+	mainSizes := make([]float64, len(items))
+	copy(mainSizes, hypoMainSizes)
+
+	if freeSpace > 0 && totalGrow > 0 {
+		// Distribute positive free space via flex-grow
+		extraPerUnit := freeSpace / totalGrow
+		for i, item := range items {
+			mainSizes[i] += extraPerUnit * item.Style.FlexGrow
+			if mainSizes[i] < 0 {
+				mainSizes[i] = 0
+			}
+		}
+	} else if freeSpace < 0 && totalShrink > 0 {
+		// Distribute negative free space via flex-shrink
+		// Shrink proportionally to flex-shrink * flex-basis
+		var scaledShrinkSum float64
+		for i, item := range items {
+			if hypoMainSizes[i] > 0 {
+				scaledShrinkSum += item.Style.FlexShrink * hypoMainSizes[i]
+			}
+		}
+		if scaledShrinkSum > 0 {
+			shrinkNeeded := -freeSpace
+			for i, item := range items {
+				if hypoMainSizes[i] > 0 {
+					shrink := shrinkNeeded * (item.Style.FlexShrink * hypoMainSizes[i]) / scaledShrinkSum
+					mainSizes[i] -= shrink
+					if mainSizes[i] < 0 {
+						mainSizes[i] = 0
+					}
+				}
+			}
+		}
+	}
+
+	// Apply final main sizes to items
+	for i, item := range items {
+		setMainSize(item, mainSizes[i])
+	}
+
+	// Phase 3: Calculate border-box dimensions for each item
+	// (needed for positioning)
+	type itemDim struct {
+		mainSize       float64 // content main size
+		crossSize      float64 // content cross size
+		borderMainSize float64 // border-box main size
+	}
+	itemDims := make([]itemDim, len(items))
+	for i, item := range items {
+		// Clamp to min/max
+		if mainSizes[i] < 0 {
+			mainSizes[i] = 0
+		}
+
+		// For the cross size, initial estimate is 0 or explicitly set
+		crossSize := getCrossSize(item)
+		if crossSize == 0 {
+			// If no explicit cross size, we'll set it based on align-items: stretch
+			// or leave as 0 and use the container's cross size later
+		}
+
+		bl := item.Border.Left
+		br := item.Border.Right
+		bt := item.Border.Top
+		bb := item.Border.Bottom
+		pl := item.Padding.Left
+		pr := item.Padding.Right
+		pt := item.Padding.Top
+		pb := item.Padding.Bottom
+
+		var borderMainSize float64
+		if mainIsX {
+			borderMainSize = mainSizes[i] + bl + br + pl + pr
+			crossSize = item.ComputedHeight // was set earlier
+		} else {
+			borderMainSize = mainSizes[i] + bt + bb + pt + pb
+			crossSize = item.ComputedWidth
+		}
+		itemDims[i] = itemDim{
+			mainSize:       mainSizes[i],
+			crossSize:      crossSize,
+			borderMainSize: borderMainSize,
+		}
+	}
+
+	// Phase 4: If wrapping, break items into lines
+	type flexLine struct {
+		items    []int // indices into items
+		mainSize float64
+	}
+	lines := []flexLine{{}}
+
+	if container.Style.FlexWrap == style.FlexWrapWrap || container.Style.FlexWrap == style.FlexWrapWrapReverse {
+		currentLine := 0
+		currentLineMain := 0.0
+		for i := range items {
+			itemMain := itemDims[i].borderMainSize + getMainMarginStart(items[i]) + getMainMarginEnd(items[i])
+			if currentLineMain+itemMain > containerMainSize && len(lines[currentLine].items) > 0 {
+				lines = append(lines, flexLine{})
+				currentLine++
+				currentLineMain = 0
+			}
+			lines[currentLine].items = append(lines[currentLine].items, i)
+			lines[currentLine].mainSize += itemMain
+		}
+	} else {
+		// No wrap — all items on one line
+		for i := range items {
+			lines[0].items = append(lines[0].items, i)
+		}
+	}
+
+	// Phase 5: Position items on main axis per line
+	lineOffset := 0.0
+	wrapReverse := container.Style.FlexWrap == style.FlexWrapWrapReverse
+
+	for _, line := range lines {
+		// Calculate the total main size of items on this line (including gaps)
+		lineMainUsed := 0.0
+		for idx, i := range line.items {
+			item := items[i]
+			itemMain := itemDims[i].borderMainSize + getMainMarginStart(item) + getMainMarginEnd(item)
+			lineMainUsed += itemMain
+			if idx > 0 {
+				lineMainUsed += gapMain
+			}
+		}
+
+		// Available main space within the container for this line
+		availableMain := containerMainSize
+
+		// Position items along main axis based on justify-content
+		var startOffset float64
+		var spacing float64 // extra space between items
+		remainingSpace := availableMain - lineMainUsed
+
+		switch container.Style.JustifyContent {
+		case style.JustifyContentFlexStart, style.JustifyContentFlexEnd:
+			if (container.Style.JustifyContent == style.JustifyContentFlexEnd) != reverse {
+				startOffset = availableMain - lineMainUsed
+			}
+		case style.JustifyContentCenter:
+			startOffset = remainingSpace / 2
+		case style.JustifyContentSpaceBetween:
+			if len(line.items) > 1 {
+				spacing = remainingSpace / float64(len(line.items)-1)
+			} else {
+				startOffset = 0
+			}
+		case style.JustifyContentSpaceAround:
+			if len(line.items) > 0 {
+				spacing = remainingSpace / float64(len(line.items))
+				startOffset = spacing / 2
+			}
+		case style.JustifyContentSpaceEvenly:
+			if len(line.items) > 0 {
+				spacing = remainingSpace / float64(len(line.items)+1)
+				startOffset = spacing
+			}
+		}
+
+		cursor := startOffset
+		for _, idx := range line.items {
+			item := items[idx]
+
+			// Position this item along main axis
+			var mainPos float64
+			if mainIsX {
+				mainPos = contentX + cursor + getMainMarginStart(item)
+			} else {
+				mainPos = contentY + cursor + getMainMarginStart(item)
+			}
+
+			// Calculate cross size for this item
+			// For stretch: use line's cross size
+			// For other alignments: use item's content cross size
+			var itemCrossSize float64
+			alignSelf := resolveAlignSelf(item.Style.AlignSelf, container.Style.AlignItems)
+
+			// Determine the available cross space for this line
+			var availableCrossForLine float64
+			if mainIsX {
+				availableCrossForLine = contentHeight - lineOffset
+			} else {
+				availableCrossForLine = contentWidth - lineOffset
+			}
+			if availableCrossForLine < 0 {
+				availableCrossForLine = 0
+			}
+
+			if alignSelf == style.AlignItemsStretch && availableCrossForLine > 0 {
+				// Stretch to fill available cross space
+				itemCrossSize = availableCrossForLine
+			} else {
+				itemCrossSize = itemDims[idx].crossSize
+				if itemCrossSize <= 0 {
+					// If cross size not determined, use 1 row as default
+					itemCrossSize = 1
+				}
+			}
+
+			// Apply the cross size to the item
+			setCrossSize(item, itemCrossSize)
+
+			// Set item position and size (border-box)
+			var crossStart float64
+			if mainIsX {
+				// main axis = X, cross axis = Y
+				lineCrossStart := contentY + lineOffset
+				availableCross := availableCrossForLine
+
+				switch alignSelf {
+				case style.AlignItemsFlexStart, style.AlignItemsStretch:
+					crossStart = lineCrossStart
+				case style.AlignItemsFlexEnd:
+					crossStart = lineCrossStart + availableCross - itemCrossSize
+				case style.AlignItemsCenter:
+					crossStart = lineCrossStart + (availableCross-itemCrossSize)/2
+				default:
+					crossStart = lineCrossStart
+				}
+
+				item.Rect.X = int(mainPos)
+				item.Rect.Y = int(crossStart + getCrossMarginStart(item))
+			} else {
+				// main axis = Y, cross axis = X
+				lineCrossStart := contentX + lineOffset
+				availableCross := availableCrossForLine
+
+				switch alignSelf {
+				case style.AlignItemsFlexStart, style.AlignItemsStretch:
+					crossStart = lineCrossStart
+				case style.AlignItemsFlexEnd:
+					crossStart = lineCrossStart + availableCross - itemCrossSize
+				case style.AlignItemsCenter:
+					crossStart = lineCrossStart + (availableCross-itemCrossSize)/2
+				default:
+					crossStart = lineCrossStart
+				}
+
+				item.Rect.X = int(crossStart + getCrossMarginStart(item))
+				item.Rect.Y = int(mainPos)
+			}
+
+			// Set border box dimensions
+			bw := item.BorderWidth()
+			bh := item.BorderHeight()
+			item.Rect.Width = int(bw)
+			item.Rect.Height = int(bh)
+
+			// Update content rect
+			item.ContentRect.X = item.Rect.X + int(item.Border.Left+item.Padding.Left)
+			item.ContentRect.Y = item.Rect.Y + int(item.Border.Top+item.Padding.Top)
+			item.ContentRect.Width = int(item.ComputedWidth)
+			item.ContentRect.Height = int(item.ComputedHeight)
+
+			// Recurse into children of this flex item
+			e.layoutBox(item)
+
+			cursor += itemDims[idx].borderMainSize + gapMain + spacing + getMainMarginStart(item) + getMainMarginEnd(item)
+		}
+
+		// Update the container's cross size based on lines
+		// Find max cross size in this line
+		maxCrossInLine := 0.0
+		for _, idx := range line.items {
+			item := items[idx]
+			cs := getCrossSize(item) + getCrossMarginStart(item) + getCrossMarginEnd(item)
+			if cs > maxCrossInLine {
+				maxCrossInLine = cs
+			}
+		}
+		lineOffset += maxCrossInLine + gapCross
+	}
+
+	// Update container height based on content if auto
+	containerHeightFromContent := lineOffset
+	if mainIsX {
+		// Container height = max of line cross-axis usage + padding + border
+		if container.ComputedHeight == 0 {
+			containerHeightFromContent += container.Border.Top + container.Border.Bottom +
+				container.Padding.Top + container.Padding.Bottom
+			container.ComputedHeight = containerHeightFromContent
+			container.Rect.Height = int(container.BorderHeight())
+			container.ContentRect.Height = int(container.ComputedHeight -
+				container.Padding.Top - container.Padding.Bottom -
+				container.Border.Top - container.Border.Bottom)
+		}
+	} else {
+		// Container width = max of line cross-axis usage + padding + border
+		// (already set above)
+	}
+
+	// If wrap-reverse, flip the cross-axis positions
+	if wrapReverse && mainIsX {
+		for _, item := range items {
+			item.Rect.Y = int(contentHeight) - item.Rect.Y - item.Rect.Height
+		}
+	} else if wrapReverse && !mainIsX {
+		for _, item := range items {
+			item.Rect.X = int(contentWidth) - item.Rect.X - item.Rect.Width
+		}
+	}
+}
+
+// resolveAlignSelf resolves the effective align-self for an item,
+// considering the container's align-items if align-self is auto.
+func resolveAlignSelf(as style.AlignSelfType, containerAlign style.AlignItemsType) style.AlignItemsType {
+	switch as {
+	case style.AlignSelfAuto:
+		return containerAlign
+	case style.AlignSelfFlexStart:
+		return style.AlignItemsFlexStart
+	case style.AlignSelfFlexEnd:
+		return style.AlignItemsFlexEnd
+	case style.AlignSelfCenter:
+		return style.AlignItemsCenter
+	case style.AlignSelfStretch:
+		return style.AlignItemsStretch
+	case style.AlignSelfBaseline:
+		return style.AlignItemsBaseline
+	}
+	return containerAlign
 }
 
 // calculatePositions sets the absolute position for a box and its children.

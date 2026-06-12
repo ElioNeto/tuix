@@ -260,7 +260,7 @@ func (p *Painter) paintBox(box *layout.Box) {
 	switch box.Type {
 	case layout.BoxText:
 		p.paintText(box, fg, bg)
-	case layout.BoxBlock, layout.BoxInline, layout.BoxRoot:
+	case layout.BoxBlock, layout.BoxInline, layout.BoxRoot, layout.BoxFlex:
 		p.paintElement(box, fg, bg)
 	}
 
