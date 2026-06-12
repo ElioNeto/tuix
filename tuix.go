@@ -2064,8 +2064,19 @@ func (a *App) prepareProgressDOM(node *dom.Node) {
 
 	// Indeterminate: no value attribute
 	if valueStr == "" {
-		// Show indeterminate state
-		a.setInputTextChild(node, " [∘∘∘∘∘∘∘∘∘∘]")
+		// Show animated indeterminate state using animation frame
+		barWidth := 10
+		pos := (a.animFrame / 2) % (barWidth - 2)
+		bar := "["
+		for i := 0; i < barWidth; i++ {
+			if i >= pos && i < pos+3 {
+				bar += "#"
+			} else {
+				bar += "-"
+			}
+		}
+		bar += "]"
+		a.setInputTextChild(node, " " + bar)
 		return
 	}
 
