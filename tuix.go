@@ -2070,9 +2070,9 @@ func (a *App) prepareProgressDOM(node *dom.Node) {
 		bar := "["
 		for i := 0; i < barWidth; i++ {
 			if i >= pos && i < pos+3 {
-				bar += "#"
+				bar += "●" // filled circle
 			} else {
-				bar += "-"
+				bar += "○" // hollow circle
 			}
 		}
 		bar += "]"
