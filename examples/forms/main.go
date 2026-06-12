@@ -186,6 +186,9 @@ func main() {
 		input[type="checkbox"][focused], input[type="radio"][focused] {
 			outline: solid #00d4aa;
 		}
+		input:placeholder-shown {
+			color: #666;
+		}
 		.hint { text-align: center; color: #555; margin-top: 1; }
 	`)
 

@@ -255,7 +255,7 @@ Tuix parses a subset of HTML. Tags, attributes, classes, and IDs work as expecte
 | Descendant | `div p` | Matches `p` inside `div` |
 | Child | `div > p` | Matches direct child |
 | Adjacent | `h1 + p` | Matches `p` immediately after `h1` |
-| Pseudo-class | `:hover`, `:focus`, `:focus-visible`, `:focus-within` | Matches dynamic element state |
+| Pseudo-class | `:hover`, `:focus`, `:focus-visible`, `:focus-within`, `:disabled`, `:enabled`, `:required`, `:optional`, `:read-only`, `:read-write`, `:placeholder-shown` | Matches dynamic element state |
 | Comma list | `h1, h2, h3` | Multiple selectors share the same declarations |
 
 ### Colors
@@ -646,9 +646,10 @@ Tuix uses standard ANSI escape codes and should work in any modern terminal emul
 - [x] **Hover effects** — `:hover` pseudo-class trigger, mouse enter/leave events
 - [x] **ASCII art image converter** — PNG/JPEG/GIF → ASCII art with dithering, true-color output, GIF frame support
 - [ ] **CSS animations & transitions** — Animated property changes
-- [ ] **Modal / Dialog** — Overlay modal with backdrop, focus trap, `Esc` to close
-- [ ] **Alert / Toast notifications** — Non-blocking notification popups with auto-dismiss
+- [x] **Modal / Dialog** — Overlay modal with backdrop, focus trap, `Esc` to close
+- [x] **Alert / Toast notifications** — Non-blocking notification popups with auto-dismiss, alert/confirm dialogs
 - [x] **Z-index / stacking contexts** — Proper layering of overlapping elements
+- [x] **Enhanced form controls** — Search, number, range inputs, pseudo-classes (:disabled/:enabled/:required/:optional/:read-only/:read-write/:placeholder-shown), progress/meter elements
 - [ ] **Image rendering** — Sixel and Kitty image protocols
 - [ ] **Comprehensive test suite** — Unit and integration tests
 - [ ] **Windows native support** — Windows console API fallback

@@ -533,6 +533,8 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 			return node.HasAttribute("readonly")
 		case "read-write":
 			return !node.HasAttribute("readonly")
+		case "placeholder-shown":
+			return node.HasAttribute("placeholder-shown")
 		default:
 			return false
 		}

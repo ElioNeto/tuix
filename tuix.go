@@ -1263,6 +1263,17 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		a.prepareMeterDOM(node)
 	}
 
+	// Set placeholder-shown attribute for :placeholder-shown pseudo-class matching
+	if tag == "input" || tag == "textarea" {
+		hasPlaceholder := node.GetAttribute("placeholder") != ""
+		val := a.formValues[node]
+		if hasPlaceholder && val == "" {
+			node.SetAttribute("placeholder-shown", "")
+		} else {
+			delete(node.Attributes, "placeholder-shown")
+		}
+	}
+
 	// Recurse into children
 	for _, child := range node.Children {
 		a.prepareFormDOM(child)
