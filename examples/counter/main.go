@@ -38,7 +38,7 @@ func main() {
 
 		h1 {
 			text-align: center;
-			color: #00d4aa;
+			color: #c91c9eff;
 			font-weight: bold;
 			margin-bottom: 1;
 		}

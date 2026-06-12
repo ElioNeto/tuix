@@ -476,6 +476,12 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 			if len(styles) >= 4 {
 				style.BorderLeft.Style = styles[3]
 			}
+		} else {
+			bs := parseBorderStyleKeyword(decl.Value.Keyword)
+			style.BorderTop.Style = bs
+			style.BorderRight.Style = bs
+			style.BorderBottom.Style = bs
+			style.BorderLeft.Style = bs
 		}
 
 	case "border-color":
@@ -497,6 +503,12 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 			if len(colors) >= 4 {
 				style.BorderLeft.Color = colors[3]
 			}
+		} else {
+			cv := cssColorToColorValue(decl.Value)
+			style.BorderTop.Color = cv
+			style.BorderRight.Color = cv
+			style.BorderBottom.Color = cv
+			style.BorderLeft.Color = cv
 		}
 
 	case "color":
