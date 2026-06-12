@@ -1355,7 +1355,51 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 				}
 			}
 		}
-		a.setInputTextChild(node, " "+selected+" ")
+
+		// Collect all option texts
+		options := make([]string, 0)
+		for _, child := range node.Children {
+			if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+				for _, textChild := range child.Children {
+					if textChild.Type == dom.NodeText {
+						options = append(options, textChild.Data)
+						break
+					}
+				}
+			}
+		}
+
+		// Check if focused — show dropdown
+		isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
+		if isFocused && len(options) > 0 {
+			// Show dropdown with options below
+			displayLines := []string{" " + selected + " ▲▼"}
+			for _, opt := range options {
+				prefix := "  ○ "
+				if opt == selected {
+					prefix = "  ● "
+				}
+				displayLines = append(displayLines, prefix+opt)
+			}
+			// Replace children with multiple text nodes for the dropdown
+			oldChildren := node.Children
+			node.Children = nil
+			for _, line := range displayLines {
+				node.Children = append(node.Children, &dom.Node{
+					Type:   dom.NodeText,
+					Data:   line,
+					Parent: node,
+				})
+			}
+			// Restore original element children so they're available for re-renders
+			for _, child := range oldChildren {
+				if child.Type == dom.NodeElement {
+					node.Children = append(node.Children, child)
+				}
+			}
+		} else {
+			a.setInputTextChild(node, " "+selected+" ")
+		}
 
 	case "button", "a":
 		// These already have text children — just ensure focused styling
@@ -1675,8 +1719,18 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		return a.handleTextEdit(event, focused)
 
 	case "select":
+		if event.Key == terminal.KeyUp || event.Key == terminal.KeyLeft {
+			a.cycleSelectOption(focused, -1)
+			a.renderFrame()
+			return true
+		}
+		if event.Key == terminal.KeyDown || event.Key == terminal.KeyRight {
+			a.cycleSelectOption(focused, 1)
+			a.renderFrame()
+			return true
+		}
 		if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
-			a.cycleSelectOption(focused)
+			// Toggle dropdown visibility via render
 			a.renderFrame()
 			return true
 		}
@@ -2330,8 +2384,9 @@ func (a *App) checkRadio(node *dom.Node) {
 	}
 }
 
-// cycleSelectOption moves to the next option in a select element.
-func (a *App) cycleSelectOption(node *dom.Node) {
+// cycleSelectOption moves to the next or previous option in a select element.
+// dir should be 1 for next, -1 for previous.
+func (a *App) cycleSelectOption(node *dom.Node, dir int) {
 	options := make([]string, 0)
 	for _, child := range node.Children {
 		if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
@@ -2350,7 +2405,10 @@ func (a *App) cycleSelectOption(node *dom.Node) {
 	current := a.formValues[node]
 	for i, opt := range options {
 		if opt == current {
-			next := (i + 1) % len(options)
+			next := (i + dir) % len(options)
+			if next < 0 {
+				next += len(options)
+			}
 			a.formValues[node] = options[next]
 			return
 		}
