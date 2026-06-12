@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elioneto/tuix/color"
 	"github.com/elioneto/tuix/css"
 	"github.com/elioneto/tuix/dom"
 	"github.com/elioneto/tuix/layout"
@@ -172,6 +173,13 @@ type App struct {
 
 	// Alert/Confirm state
 	pendingAlertCallback func(bool) // Callback for alert/confirm dialog results
+
+	// Tooltip state
+	tooltipTimerChan   chan struct{} // Signals when tooltip delay elapses
+	tooltipPendingNode *dom.Node    // Node whose tooltip timer is pending
+	tooltipNode        *dom.Node    // Node whose tooltip is currently shown
+	tooltipText        string       // Text to display in tooltip
+	tooltipX, tooltipY int          // Position to render tooltip (near cursor)
 }
 
 // New creates a new tuix application.
@@ -179,6 +187,7 @@ func New() *App {
 	return &App{
 		layout:         layout.NewEngine(),
 		toastTimerChan: make(chan int, 64),
+		tooltipTimerChan: make(chan struct{}, 8),
 	}
 }
 
@@ -551,6 +560,13 @@ func (a *App) Run() error {
 			a.handleEvent(event)
 		case toastID := <-a.toastTimerChan:
 			a.dismissToast(toastID)
+		case <-a.tooltipTimerChan:
+			if a.tooltipPendingNode != nil && a.tooltipPendingNode == a.hoveredNode {
+				// Still hovering the same node — show its tooltip
+				a.tooltipNode = a.tooltipPendingNode
+				a.tooltipText = a.tooltipPendingNode.GetAttribute("title")
+				a.renderFrame()
+			}
 		}
 	}
 
@@ -722,7 +738,31 @@ func (a *App) handleEvent(event terminal.Event) {
 				a.dragRangeByMouse(event.MouseX)
 			}
 
-			// Re-render if hover state changed or drag was active
+			// Tooltip management: start/dismiss on hover change
+			if oldHovered != a.hoveredNode {
+				// Dismiss any active or pending tooltip
+				a.tooltipNode = nil
+				a.tooltipText = ""
+				a.tooltipPendingNode = nil
+
+				// If new hovered node has a title attribute, start tooltip timer
+				if a.hoveredNode != nil {
+					if title := a.hoveredNode.GetAttribute("title"); title != "" {
+						a.tooltipPendingNode = a.hoveredNode
+						a.tooltipX = event.MouseX
+						a.tooltipY = event.MouseY
+						go func(node *dom.Node, tx, ty int) {
+							time.Sleep(500 * time.Millisecond)
+							select {
+							case a.tooltipTimerChan <- struct{}{}:
+							default:
+							}
+						}(a.hoveredNode, event.MouseX, event.MouseY)
+					}
+				}
+			}
+
+			// Re-render if hover state changed, drag was active, or tooltip state changed
 			if oldHovered != a.hoveredNode || a.dragTarget != nil {
 				a.renderFrame()
 			}
@@ -916,6 +956,11 @@ func (a *App) renderFrame() {
 	a.painter = render.NewPainter(a.canvas, a.terminal.ColorMode())
 	a.painter.Paint(a.rootBox)
 
+	// Paint tooltip if active
+	if a.tooltipNode != nil && a.tooltipText != "" {
+		a.paintTooltip()
+	}
+
 	// Detach modal node if it was attached
 	if modalParent != nil {
 		modalParent.Children = removeFromSlice(modalParent.Children, a.modalNode)
@@ -936,6 +981,54 @@ func (a *App) renderFrame() {
 	// Full render (pass nil to always output everything)
 	output := a.canvas.Render(nil)
 	a.terminal.WriteString(output)
+}
+
+// paintTooltip renders a tooltip popup near the mouse cursor.
+func (a *App) paintTooltip() {
+	if a.canvas == nil || a.tooltipText == "" {
+		return
+	}
+
+	// Compute tooltip position: 2 cells right, 1 cell down from mouse
+	tipX := a.tooltipX + 2
+	tipY := a.tooltipY + 1
+
+	// Measure tooltip width
+	runes := []rune(a.tooltipText)
+	if len(runes) == 0 {
+		return
+	}
+	tipW := len(runes) + 2 // +2 for padding on each side
+	tipH := 1 // single line
+
+	// Clamp to screen
+	if tipX+tipW >= a.width {
+		tipX = a.width - tipW - 1
+	}
+	if tipX < 0 {
+		tipX = 0
+	}
+	if tipY+tipH >= a.height {
+		tipY = a.height - tipH - 1
+	}
+	if tipY < 0 {
+		tipY = 0
+	}
+
+	// Colors
+	bg := color.Color{Type: color.ColorTrue, R: 0x33, G: 0x33, B: 0x33}
+	fg := color.Color{Type: color.ColorTrue, R: 0xFF, G: 0xFF, B: 0xFF}
+
+	// Draw background and text
+	for x := tipX; x < tipX+tipW; x++ {
+		a.canvas.Set(x, tipY, ' ', fg, bg)
+	}
+	// Draw text
+	for i, r := range runes {
+		if tipX+1+i < tipX+tipW {
+			a.canvas.Set(tipX+1+i, tipY, r, fg, bg)
+		}
+	}
 }
 
 // saveScrollOffsets walks the box tree and saves scroll offsets.

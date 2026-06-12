@@ -67,7 +67,7 @@ func main() {
 
 				<div class="field">
 					<label for="search">Search</label>
-					<input id="search" type="search" placeholder="Search..." />
+					<input id="search" type="search" placeholder="Search..." title="Press Esc to clear the search field" />
 				</div>
 
 				<div class="field">
@@ -98,6 +98,7 @@ func main() {
 			</form>
 
 			<p class="hint">Tab to navigate · Type to edit · Enter/Space to toggle · Esc to clear search or unfocus · q to quit</p>
+			<p class="hint" title="Hover over elements with title attributes to see tooltips">💡 Hover for tooltips</p>
 		</div>
 	`)
 
