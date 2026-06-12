@@ -541,6 +541,19 @@ func (e *LayoutEngine) layoutInline(container *Box, inlineChildren []*Box, curso
 				box.ComputedHeight = lineHeight
 			} else if box.Type == BoxInline {
 				box.ComputedHeight = lineHeight
+				// Propagate position and size to child text boxes
+				for _, child := range box.Children {
+					if child.Type == BoxText {
+						child.Rect.X = box.Rect.X + int(box.Border.Left+box.Padding.Left)
+						child.Rect.Y = box.Rect.Y + int(box.Border.Top+box.Padding.Top)
+						child.Rect.Width = int(r.wordWidth)
+						child.Rect.Height = int(lineHeight)
+						child.ContentRect.X = child.Rect.X
+						child.ContentRect.Y = child.Rect.Y
+						child.ContentRect.Width = child.Rect.Width
+						child.ContentRect.Height = child.Rect.Height
+					}
+				}
 			}
 
 			// Border box dimensions
