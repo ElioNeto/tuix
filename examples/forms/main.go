@@ -76,6 +76,11 @@ func main() {
 				</div>
 
 				<div class="field">
+					<label>Color</label>
+					<input type="color" value="#FF6600" />
+				</div>
+
+				<div class="field">
 					<label for="age">Age</label>
 					<input id="age" type="number" value="25" />
 				</div>

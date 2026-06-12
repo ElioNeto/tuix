@@ -1266,6 +1266,18 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 			val := a.formValues[node]
 			a.prepareRangeDOM(node, val)
 
+		case "color":
+			// Color picker handled separately
+			val := a.formValues[node]
+			if val == "" {
+				val = node.GetAttribute("value")
+				if val == "" {
+					val = "#000000"
+				}
+				a.formValues[node] = val
+			}
+			a.prepareColorDOM(node, val)
+
 		default: // text, password, email, number, etc.
 			val := a.formValues[node]
 			isPassword := inputType == "password"
@@ -1652,6 +1664,9 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		case "range":
 			// Range slider: left/right arrows adjust, mouse drag adjusts
 			return a.handleRangeEdit(event, focused)
+		case "color":
+			// Color input: left/right arrows cycle colors
+			return a.handleColorEdit(event, focused)
 		default: // text, password, email, etc.
 			return a.handleTextEdit(event, focused)
 		}
@@ -2049,6 +2064,88 @@ func (a *App) prepareRangeDOM(node *dom.Node, val string) {
 	// Show value
 	display := track + " " + itoa(int(curVal))
 	a.setInputTextChild(node, display)
+}
+
+// prepareColorDOM renders <input type="color"> as the current hex value.
+func (a *App) prepareColorDOM(node *dom.Node, val string) {
+	if val == "" {
+		val = "#000000"
+	}
+	// Validate hex format
+	if len(val) < 7 || val[0] != '#' {
+		val = "#000000"
+	}
+	// Show the color value
+	a.setInputTextChild(node, val)
+}
+
+// handleColorEdit handles keyboard input for <input type="color">.
+// Left/Right cycle through a curated palette of colors.
+func (a *App) handleColorEdit(event terminal.Event, node *dom.Node) bool {
+	// Curated palette of common web colors
+	palette := []string{
+		"#000000", "#444444", "#888888", "#BBBBBB", "#FFFFFF",
+		"#FF0000", "#FF4444", "#FF8888",
+		"#00FF00", "#44FF44", "#88FF88",
+		"#0000FF", "#4444FF", "#8888FF",
+		"#FFFF00", "#FFAA00", "#FF6600",
+		"#00FFFF", "#00FFAA", "#00AAFF",
+		"#FF00FF", "#AA00FF", "#FF0088",
+		"#800000", "#008000", "#000080",
+		"#808000", "#008080", "#800080",
+		"#C0C0C0", "#A52A2A", "#2E8B57",
+	}
+
+	val := a.formValues[node]
+	if val == "" {
+		val = "#000000"
+	}
+
+	// Find current color index
+	idx := -1
+	for i, c := range palette {
+		if strings.EqualFold(c, val) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		idx = 0
+	}
+
+	switch event.Key {
+	case terminal.KeyLeft:
+		idx--
+		if idx < 0 {
+			idx = len(palette) - 1
+		}
+		a.formValues[node] = palette[idx]
+		a.renderFrame()
+		return true
+
+	case terminal.KeyRight:
+		idx++
+		if idx >= len(palette) {
+			idx = 0
+		}
+		a.formValues[node] = palette[idx]
+		a.renderFrame()
+		return true
+
+	case terminal.KeyHome:
+		a.formValues[node] = palette[0]
+		a.renderFrame()
+		return true
+
+	case terminal.KeyEnd:
+		a.formValues[node] = palette[len(palette)-1]
+		a.renderFrame()
+		return true
+
+	default:
+		// All other keys are ignored
+		return true
+	}
 }
 
 // handleRangeClick handles a mouse click on a range input.
