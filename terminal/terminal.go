@@ -162,6 +162,12 @@ func Open() (*Terminal, error) {
 	}
 	t.oldState = state
 
+	// Enter alternate screen buffer
+	t.enterAltScreen()
+
+	// Hide cursor
+	t.hideCursor()
+
 	// Enable mouse tracking
 	t.enableMouse()
 
@@ -190,8 +196,14 @@ func (t *Terminal) Close() error {
 	// Wait for goroutines to finish
 	t.wg.Wait()
 
+	// Show cursor
+	t.showCursor()
+
 	// Disable mouse tracking
 	t.disableMouse()
+
+	// Exit alternate screen buffer
+	t.exitAltScreen()
 
 	// Restore terminal state
 	if t.oldState != nil {
@@ -576,13 +588,36 @@ func (t *Terminal) watchResize() {
 	}
 }
 
+// enterAltScreen switches to the alternate screen buffer.
+func (t *Terminal) enterAltScreen() {
+	t.WriteString("\x1b[?1049h")
+}
+
+// exitAltScreen returns to the main screen buffer.
+func (t *Terminal) exitAltScreen() {
+	t.WriteString("\x1b[?1049l")
+}
+
+// hideCursor hides the terminal cursor.
+func (t *Terminal) hideCursor() {
+	t.WriteString("\x1b[?25l")
+}
+
+// showCursor shows the terminal cursor.
+func (t *Terminal) showCursor() {
+	t.WriteString("\x1b[?25h")
+}
+
+// clearScreen clears the entire screen and moves cursor home.
+func (t *Terminal) clearScreen() {
+	t.WriteString("\x1b[2J\x1b[H")
+}
+
 // enableMouse enables mouse tracking (X10 + SGR).
 func (t *Terminal) enableMouse() {
-	// Enable SGR mouse mode, also enable button events
 	t.WriteString("\x1b[?1000h") // Enable mouse tracking
 	t.WriteString("\x1b[?1002h") // Enable button event tracking
 	t.WriteString("\x1b[?1006h") // Enable SGR mouse
-	t.WriteString("\x1b[?25h")   // Show cursor
 }
 
 // disableMouse disables mouse tracking.
@@ -590,7 +625,6 @@ func (t *Terminal) disableMouse() {
 	t.WriteString("\x1b[?1006l")
 	t.WriteString("\x1b[?1002l")
 	t.WriteString("\x1b[?1000l")
-	t.WriteString("\x1b[?25l") // Hide cursor (restored on close)
 }
 
 // detectColorMode detects the terminal's color capabilities by checking

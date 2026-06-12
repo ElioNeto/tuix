@@ -260,7 +260,6 @@ func (a *App) handleEvent(event terminal.Event) {
 		a.height = event.Height
 		a.layout.ViewWidth = float64(a.width)
 		a.layout.ViewHeight = float64(a.height)
-		a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
 		a.renderFrame()
 		if a.onResize != nil {
 			a.onResize(event.Width, event.Height)
@@ -274,6 +273,8 @@ func (a *App) handleEvent(event terminal.Event) {
 }
 
 // renderFrame performs layout and paints the current frame to the terminal.
+// Each frame is rendered from scratch (like Bubble Tea), avoiding ANSI state
+// tracking issues that come with differential rendering.
 func (a *App) renderFrame() {
 	if a.document == nil {
 		return
@@ -285,10 +286,8 @@ func (a *App) renderFrame() {
 	// Perform layout
 	a.rootBox = a.layout.Layout(a.document, styles)
 
-	// Clear canvas
-	a.canvas.Clear()
-
-	// Paint the layout
+	// Paint the layout onto a fresh canvas
+	a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
 	a.painter = render.NewPainter(a.canvas, a.terminal.ColorMode())
 	a.painter.Paint(a.rootBox)
 
@@ -297,16 +296,9 @@ func (a *App) renderFrame() {
 		a.onRender()
 	}
 
-	// Output to terminal
-	output := a.canvas.Render(a.oldCanvas)
+	// Full render (pass nil to always output everything)
+	output := a.canvas.Render(nil)
 	a.terminal.WriteString(output)
-
-	// Save canvas for differential rendering
-	oldCanvas := a.canvas
-	a.oldCanvas = oldCanvas
-
-	// Create a fresh canvas for next frame
-	a.canvas = render.NewCanvas(a.width, a.height, a.terminal.ColorMode())
 }
 
 // resolveStyles walks the DOM tree and resolves styles for each node.
