@@ -335,27 +335,22 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 		return
 	}
 
-	// Determine font-size rendering mode
-	fs := box.Style.FontSize
-	fontMode := FontNormal
-	if fs.Value > 36 {
-		fontMode = FontDoubleBoth
-	} else if fs.Value > 24 {
-		fontMode = FontDoubleWide
-	}
-	linesPerRow := 1
-	if fontMode == FontDoubleHigh || fontMode == FontDoubleBoth {
-		linesPerRow = 2
-	}
-
-	// Set line mode on the canvas for the rows this text will occupy
-	for dy := 0; dy < linesPerRow && contentY+dy < p.Canvas.Height; dy++ {
-		p.Canvas.SetLineMode(contentY+dy, fontMode)
+	// Apply font-size as line spacing: each "row" of text uses
+	// ceil(fontSize / 16) actual terminal rows.
+	lineSpan := 1
+	if fs := box.Style.FontSize; fs.Value > 20 {
+		lineSpan = int(fs.Value / 16)
+		if lineSpan < 1 {
+			lineSpan = 1
+		}
+		if lineSpan > 4 {
+			lineSpan = 4
+		}
 	}
 
 	wordIndex := 0
 
-	for row := 0; wordIndex < len(words); row++ {
+	for row := 0; wordIndex < len(words); row += lineSpan {
 		// Calculate how many words fit on this line and the line width
 		lineWords := make([]string, 0)
 		lineWidth := 0

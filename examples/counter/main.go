@@ -41,6 +41,7 @@ func main() {
 			text-align: center;
 			color: #c91c9eff;
 			font-weight: bold;
+			font-size: 50;
 			margin-bottom: 1;
 		}
 
@@ -72,7 +73,7 @@ func main() {
 			background-color: #16213e;
 		}
 
-		.secondary {
+		.btn.secondary {
 			border-color: #e94560;
 			color: #e94560;
 		}
