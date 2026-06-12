@@ -13,8 +13,6 @@ import (
 func main() {
 	app := tuix.New()
 
-	app.UseDesignSystem()
-
 	app.SetHTML(`
 		<div id="app">
 			<h1>🎬 CSS Animations</h1>
@@ -61,7 +59,42 @@ func main() {
 		#app {
 			padding: 1;
 			background-color: #1a1a2e;
-			color: #0f3460;
+			color: #c0c0c0;
+		}
+		h1 {
+			color: #00d4aa;
+			text-align: center;
+			margin-bottom: 1;
+		}
+		h2 {
+			color: #e94560;
+			margin-bottom: 1;
+		}
+		.card {
+			margin-bottom: 1;
+		}
+		code {
+			color: #00d4aa;
+		}
+		.muted {
+			color: #555;
+		}
+		/* Animation classes */
+		.animate-spin {
+			font-weight: bold;
+		}
+		.animate-pulse {
+			color: #555;
+		}
+		.animate-pulse[pulsing] {
+			color: #00ff00;
+			font-weight: bold;
+		}
+		.animate-blink {
+			color: #555;
+		}
+		.animate-blink[blinking] {
+			color: #00ff00;
 		}
 		h1 {
 			color: #00d4aa;
