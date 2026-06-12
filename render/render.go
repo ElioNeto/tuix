@@ -25,12 +25,23 @@ type Cell struct {
 	Reverse       bool
 }
 
+// FontSizeMode indicates how a line's characters are scaled.
+type FontSizeMode int
+
+const (
+	FontNormal   FontSizeMode = iota // 1×1 cell per character (default)
+	FontDoubleWide                    // 2×1: DEC double-width (\x1b#6)
+	FontDoubleHigh                    // 1×2: DEC double-height (\x1b#3 / \x1b#4)
+	FontDoubleBoth                    // 2×2: both
+)
+
 // Canvas is a rectangular grid of character cells.
 type Canvas struct {
 	Cells       [][]Cell
 	Width       int
 	Height      int
 	colorMode   int
+	lineModes   []FontSizeMode // Per-line font size mode
 }
 
 // NewCanvas creates a new canvas with the given dimensions.
@@ -44,6 +55,7 @@ func NewCanvas(width, height, colorMode int) *Canvas {
 		Width:     width,
 		Height:    height,
 		colorMode: colorMode,
+		lineModes: make([]FontSizeMode, height),
 	}
 }
 
@@ -53,6 +65,7 @@ func (c *Canvas) Clear() {
 		for x := 0; x < c.Width; x++ {
 			c.Cells[y][x] = Cell{}
 		}
+		c.lineModes[y] = FontNormal
 	}
 }
 
@@ -95,6 +108,13 @@ func (c *Canvas) SetRune(x, y int, r rune) {
 	c.Cells[y][x].Rune = r
 }
 
+// SetLineMode sets the font size mode for a row.
+func (c *Canvas) SetLineMode(y int, mode FontSizeMode) {
+	if y >= 0 && y < c.Height {
+		c.lineModes[y] = mode
+	}
+}
+
 // SetCursor sends ANSI code to position the cursor.
 func SetCursor(x, y int) string {
 	return fmt.Sprintf("\x1b[%d;%dH", y+1, x+1)
@@ -120,6 +140,16 @@ func (c *Canvas) Render(old *Canvas) string {
 	bgSet := false
 
 	for y := 0; y < c.Height; y++ {
+		// Output DEC line attribute for font size mode
+		switch c.lineModes[y] {
+		case FontDoubleWide:
+			buf.WriteString("\x1b#6")
+		case FontDoubleHigh:
+			buf.WriteString("\x1b#3")
+		case FontDoubleBoth:
+			buf.WriteString("\x1b#6\x1b#3")
+		}
+
 		for x := 0; x < c.Width; x++ {
 			cell := c.Cells[y][x]
 
@@ -303,6 +333,24 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		return
+	}
+
+	// Determine font-size rendering mode
+	fs := box.Style.FontSize
+	fontMode := FontNormal
+	if fs.Value > 36 {
+		fontMode = FontDoubleBoth
+	} else if fs.Value > 24 {
+		fontMode = FontDoubleWide
+	}
+	linesPerRow := 1
+	if fontMode == FontDoubleHigh || fontMode == FontDoubleBoth {
+		linesPerRow = 2
+	}
+
+	// Set line mode on the canvas for the rows this text will occupy
+	for dy := 0; dy < linesPerRow && contentY+dy < p.Canvas.Height; dy++ {
+		p.Canvas.SetLineMode(contentY+dy, fontMode)
 	}
 
 	wordIndex := 0
