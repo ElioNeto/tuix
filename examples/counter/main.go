@@ -65,8 +65,8 @@ func main() {
 		}
 
 		.btn {
-			padding: 1 2;
-			margin: 1;
+			padding: 1 4;
+			margin: 2;
 			border: solid;
 			border-color: #00d4aa;
 			color: #00d4aa;
