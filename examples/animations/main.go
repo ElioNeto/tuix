@@ -19,25 +19,20 @@ func main() {
 
 			<div class="card">
 				<h2>Spinner</h2>
-				<div style="margin-bottom: 1;">
-					<span class="animate-spin">Loading </span><span class="animate-spin">▌</span>
-				</div>
+				<span>Loading </span><span class="animate-spin">▌</span>
+				<span> </span>
 				<p>Class: <code>.animate-spin</code> — cycles through | / - \ characters</p>
 			</div>
 
 			<div class="card">
 				<h2>Pulse</h2>
-				<div style="margin-bottom: 1;">
-					<span class="animate-pulse">● Live</span>
-				</div>
+				<span class="animate-pulse">● Live</span>
 				<p>Class: <code>.animate-pulse</code> — toggles dim/bright state via [pulsing] attribute</p>
 			</div>
 
 			<div class="card">
 				<h2>Blink</h2>
-				<div style="margin-bottom: 1;">
-					<span class="animate-blink" style="color: #e94560;">● Recording</span>
-				</div>
+				<span class="animate-blink">● Recording</span>
 				<p>Class: <code>.animate-blink</code> — toggles visible/hidden via [blinking] attribute</p>
 			</div>
 
@@ -51,7 +46,7 @@ func main() {
 				<progress></progress>
 			</div>
 
-			<p class="text-center muted" style="margin-top: 1;">Animations tick at 200ms intervals · q to quit</p>
+			<p class="text-center muted">Animations tick at 200ms intervals · q to quit</p>
 		</div>
 	`)
 
@@ -60,6 +55,7 @@ func main() {
 			padding: 1;
 			background-color: #1a1a2e;
 			color: #c0c0c0;
+			width: 100%;
 		}
 		h1 {
 			color: #00d4aa;
@@ -71,7 +67,10 @@ func main() {
 			margin-bottom: 1;
 		}
 		.card {
-			margin-bottom: 1;
+			margin: 2;
+			border: solid;
+			border-color: #00d444;
+			padding: 0 ;
 		}
 		code {
 			color: #00d4aa;
@@ -79,49 +78,23 @@ func main() {
 		.muted {
 			color: #555;
 		}
-		/* Animation classes */
 		.animate-spin {
 			font-weight: bold;
 		}
 		.animate-pulse {
-			color: #555;
+			color: #1d99bfff;
 		}
 		.animate-pulse[pulsing] {
 			color: #00ff00;
 			font-weight: bold;
 		}
 		.animate-blink {
-			color: #555;
+			color: #58109cff;
 		}
 		.animate-blink[blinking] {
 			color: #00ff00;
 		}
-		h1 {
-			color: #00d4aa;
-			text-align: center;
-			margin-bottom: 1;
-		}
-		h2 {
-			color: #e94560;
-			margin-bottom: 1;
-		}
-		.card {
-			margin-bottom: 1;
-		}
-		code {
-			color: #00d4aa;
-		}
-		.muted {
-			color: #555;
-		}
-		/* Pulse and blink are now text-based (no CSS attribute selectors) */
-		.animate-pulse {
-			color: #00ff00;
-			font-weight: bold;
-		}
-		.animate-blink {
-			color: #00ff00;
-		}
+	
 	`)
 
 	app.OnRune(func(r rune) {

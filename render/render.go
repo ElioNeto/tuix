@@ -182,24 +182,7 @@ func (c *Canvas) Render(old *Canvas) string {
 				currentBg = cell.Bg
 				bgSet = true
 			}
-			if cell.BgSet && (cell.Bg != currentBg || !bgSet) {
-				buf.WriteString(cell.Bg.ANSIBackground(c.colorMode))
-				currentBg = cell.Bg
-				bgSet = true
-			}
 
-			if cell.Bold {
-				buf.WriteString("\x1b[1m")
-			} else {
-				buf.WriteString("\x1b[22m")
-				// Re-emit foreground color as \x1b[22m may reset it in some terminals
-				if fgSet {
-					buf.WriteString(currentFg.ANSI(c.colorMode))
-				}
-				if bgSet {
-					buf.WriteString(currentBg.ANSIBackground(c.colorMode))
-				}
-			}
 			if cell.Italic {
 				buf.WriteString("\x1b[3m")
 			}
