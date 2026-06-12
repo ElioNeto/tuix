@@ -242,18 +242,13 @@ func (r *Resolver) ResolveWithParent(node *dom.Node, parent ComputedStyle) Compu
 		}
 	}
 
-	// Sort by specificity and source order (simple bubble sort)
+	// Sort by specificity and source order (ascending — lower specificity first,
+	// so later rules override earlier ones).
 	for i := 0; i < len(matches); i++ {
 		for j := i + 1; j < len(matches); j++ {
-			less := false
 			si := matches[i].rule.Selectors[0].Specificity
 			sj := matches[j].rule.Selectors[0].Specificity
-			if si.Less(sj) {
-				less = true
-			} else if si.Equal(sj) {
-				less = matches[i].index < matches[j].index
-			}
-			if less {
+			if sj.Less(si) || (si.Equal(sj) && matches[j].index < matches[i].index) {
 				matches[i], matches[j] = matches[j], matches[i]
 			}
 		}
@@ -280,16 +275,73 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 
 	switch sel.Type {
 	case css.SelectorUniversal:
+		// May also have compound conditions
+		if sel.Tag != "" && node.TagName() != sel.Tag {
+			return false
+		}
+		if sel.ID != "" && node.ID() != sel.ID {
+			return false
+		}
+		for _, cls := range sel.Classes {
+			if !node.HasClass(cls) {
+				return false
+			}
+		}
 		return true
 
 	case css.SelectorTag:
-		return node.TagName() == sel.Value
+		if node.TagName() != sel.Value {
+			return false
+		}
+		// Check compound conditions
+		if sel.ID != "" && node.ID() != sel.ID {
+			return false
+		}
+		for _, cls := range sel.Classes {
+			if !node.HasClass(cls) {
+				return false
+			}
+		}
+		return true
 
 	case css.SelectorClass:
-		return node.HasClass(sel.Value)
+		// Primary class must match
+		if !node.HasClass(sel.Value) {
+			return false
+		}
+		// Additional classes must also match
+		for _, cls := range sel.Classes {
+			if cls == sel.Value {
+				continue
+			}
+			if !node.HasClass(cls) {
+				return false
+			}
+		}
+		// Check ID if present
+		if sel.ID != "" && node.ID() != sel.ID {
+			return false
+		}
+		// Check tag if present
+		if sel.Tag != "" && node.TagName() != sel.Tag {
+			return false
+		}
+		return true
 
 	case css.SelectorID:
-		return node.ID() == sel.Value
+		if node.ID() != sel.Value {
+			return false
+		}
+		// Check compound conditions
+		for _, cls := range sel.Classes {
+			if !node.HasClass(cls) {
+				return false
+			}
+		}
+		if sel.Tag != "" && node.TagName() != sel.Tag {
+			return false
+		}
+		return true
 
 	case css.SelectorAttribute:
 		// Parse attr=value or just attr

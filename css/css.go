@@ -24,9 +24,12 @@ type Rule struct {
 
 // Selector represents a CSS selector.
 type Selector struct {
-	Type     SelectorType
-	Value    string // Tag name, class name, ID, etc.
+	Type        SelectorType
+	Value       string // Tag name, class name, ID, etc.
 	Specificity Specificity
+	Classes     []string // Additional classes for compound selectors (.btn.secondary)
+	ID          string    // ID if present (for compound like div#app)
+	Tag         string    // Tag if present (for compound like a.class)
 }
 
 // SelectorType categorizes CSS selectors.
@@ -260,15 +263,18 @@ func (p *Parser) parseSelectors() ([]Selector, bool) {
 
 // parseSelector parses a single compound selector.
 func (p *Parser) parseSelector() (Selector, bool) {
-	parts := make([]Selector, 0)
-	simple, ok := p.parseSimpleSelector()
+	// Parse a sequence of simple selectors (compound) and combinators.
+	// Start with the first simple selector.
+	sel, ok := p.parseSimpleSelectorCompound()
 	if !ok {
 		return Selector{}, false
 	}
-	parts = append(parts, simple)
 
 	for {
+		before := p.pos
 		p.skipWhitespace()
+		hadWhitespace := p.pos > before
+
 		if p.pos >= len(p.input) {
 			break
 		}
@@ -279,7 +285,7 @@ func (p *Parser) parseSelector() (Selector, bool) {
 		}
 
 		if ch == '>' || ch == '+' || ch == '~' {
-			// Combinator
+			// Explicit combinator
 			combinator := ch
 			p.pos++
 			p.skipWhitespace()
@@ -294,37 +300,112 @@ func (p *Parser) parseSelector() (Selector, bool) {
 				ct = SelectorGeneralSibling
 			}
 
-			parts = append(parts, Selector{Type: ct})
+			sel = Selector{Type: ct, Specificity: sel.Specificity}
 
-			next, ok := p.parseSimpleSelector()
+			next, ok := p.parseSimpleSelectorCompound()
 			if !ok {
 				return Selector{}, false
 			}
-			parts = append(parts, next)
+			sel = combineSelectors(sel, next)
 		} else if ch == '.' || ch == '#' || ch == ':' || ch == '[' ||
 			(ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
 			ch == '*' || ch == '|' {
-			// Descendant combinator (implied by whitespace)
-			if len(parts) > 0 {
-				parts = append(parts, Selector{Type: SelectorDescendant})
+			if hadWhitespace {
+				// Descendant combinator (whitespace between parts)
+				sel = Selector{Type: SelectorDescendant, Specificity: sel.Specificity}
+				next, ok := p.parseSimpleSelectorCompound()
+				if !ok {
+					return Selector{}, false
+				}
+				sel = combineSelectors(sel, next)
+			} else {
+				// No whitespace — compound selector extension
+				next, ok := p.parseSimpleSelector()
+				if !ok {
+					return Selector{}, false
+				}
+				sel = mergeCompound(sel, next)
 			}
-			next, ok := p.parseSimpleSelector()
-			if !ok {
-				return Selector{}, false
-			}
-			parts = append(parts, next)
 		} else {
 			break
 		}
 	}
 
-	if len(parts) == 1 {
-		return parts[0], true
+	return sel, true
+}
+
+// parseSimpleSelectorCompound parses a compound selector (e.g., div.class#id).
+func (p *Parser) parseSimpleSelectorCompound() (Selector, bool) {
+	first, ok := p.parseSimpleSelector()
+	if !ok {
+		return Selector{}, false
 	}
 
-	// Combine into a sequence (we handle this via the selector list)
-	// For now, return the first selector with full specificity
-	return Selector{Type: SelectorTag, Value: "*"}, true
+	// Continue parsing additional simple selectors without whitespace
+	for {
+		if p.pos >= len(p.input) {
+			break
+		}
+		ch := p.input[p.pos]
+		if ch == '.' || ch == '#' || ch == ':' || ch == '[' {
+			next, ok := p.parseSimpleSelector()
+			if !ok {
+				break
+			}
+			first = mergeCompound(first, next)
+		} else {
+			break
+		}
+	}
+
+	return first, true
+}
+
+// mergeCompound combines two simple selectors for the same element
+// (e.g., .btn + .secondary → compound with both classes).
+func mergeCompound(a, b Selector) Selector {
+	result := a
+	result.Specificity.A += b.Specificity.A
+	result.Specificity.B += b.Specificity.B
+	result.Specificity.C += b.Specificity.C
+	result.Specificity.D += b.Specificity.D
+
+	// Merge classes
+	if b.Type == SelectorClass {
+		if result.Type != SelectorClass && result.Type != SelectorTag &&
+			result.Type != SelectorUniversal {
+			result.Type = SelectorClass
+		}
+		if result.Value == "" || result.Value == "*" {
+			result.Value = b.Value
+		}
+		result.Classes = append(result.Classes, b.Value)
+	} else if b.Type == SelectorID {
+		if result.Type == SelectorUniversal {
+			result.Type = SelectorID
+		}
+		result.ID = b.Value
+	} else if b.Type == SelectorTag && result.Type == SelectorUniversal {
+		result.Type = SelectorTag
+		result.Value = b.Value
+		result.Tag = b.Value
+	} else if b.Type == SelectorPseudoClass || b.Type == SelectorPseudoElement {
+		// Store as additional condition
+	}
+
+	return result
+}
+
+// combineSelectors combines two parts of a selector sequence
+// (e.g., parent child or parent > child).
+func combineSelectors(a, b Selector) Selector {
+	// For now, return the rightmost selector with combined specificity
+	result := b
+	result.Specificity.A += a.Specificity.A
+	result.Specificity.B += a.Specificity.B
+	result.Specificity.C += a.Specificity.C
+	result.Specificity.D += a.Specificity.D
+	return result
 }
 
 // parseSimpleSelector parses a single simple selector (tag, .class, #id, etc.).

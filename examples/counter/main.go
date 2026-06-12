@@ -60,11 +60,11 @@ func main() {
 		}
 
 		.buttons {
-			margin: 1;
+			margin: 2;
 		}
 
 		.btn {
-			padding: 0 1;
+			padding: 1 2;
 			margin: 1;
 			border: solid;
 			border-color: #00d4aa;
@@ -72,7 +72,7 @@ func main() {
 			background-color: #16213e;
 		}
 
-		.btn.secondary {
+		.secondary {
 			border-color: #e94560;
 			color: #e94560;
 		}
