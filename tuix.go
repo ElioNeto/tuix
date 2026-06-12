@@ -13,6 +13,7 @@
 package tuix
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -1130,6 +1131,13 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 				val = strings.Repeat("•", len([]rune(val)))
 			}
 
+			// For search inputs, show a clear indicator (×) when non-empty
+			isSearch := inputType == "search"
+			showClear := isSearch && len([]rune(val)) > 0
+
+			// For number inputs, show increment/decrement indicators when focused
+			isNumber := inputType == "number"
+
 			if val == "" {
 				val = node.GetAttribute("placeholder")
 				if val == "" {
@@ -1149,8 +1157,20 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 				}
 				// Insert cursor character
 				display := string(runes[:cursor]) + "▎" + string(runes[cursor:])
+				if showClear {
+					display += " ×"
+				}
+				if isNumber {
+					display += " ▲▼"
+				}
 				a.setInputTextChild(node, display)
 			} else {
+				if showClear {
+					val += " ×"
+				}
+				if isNumber {
+					val += " ▲▼"
+				}
 				a.setInputTextChild(node, val)
 			}
 		}
@@ -1329,7 +1349,19 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 				a.renderFrame()
 				return true
 			}
-		default: // text, password, email, search, etc.
+		case "search":
+			// Search input: Escape clears the value, retains focus
+			if event.Key == terminal.KeyEscape {
+				a.formValues[focused] = ""
+				a.formCursors[focused] = 0
+				a.renderFrame()
+				return true
+			}
+			return a.handleTextEdit(event, focused)
+		case "number":
+			// Number input: up/down arrows increment/decrement
+			return a.handleNumberEdit(event, focused)
+		default: // text, password, email, etc.
 			return a.handleTextEdit(event, focused)
 		}
 
@@ -1463,6 +1495,96 @@ func (a *App) handleTextEdit(event terminal.Event, node *dom.Node) bool {
 	}
 
 	return false
+}
+
+// handleNumberEdit processes keyboard events for number inputs.
+// Up/down arrows increment/decrement the value.
+func (a *App) handleNumberEdit(event terminal.Event, node *dom.Node) bool {
+	val := a.formValues[node]
+
+	// Parse current value, default to 0
+	stepStr := node.GetAttribute("step")
+	step := 1
+	if stepStr != "" {
+		if s, err := parseInt(stepStr); err == nil && s > 0 {
+			step = s
+		}
+	}
+
+	minStr := node.GetAttribute("min")
+	maxStr := node.GetAttribute("max")
+	hasMin := minStr != ""
+	hasMax := maxStr != ""
+	minVal := 0
+	maxVal := 0
+	if hasMin {
+		minVal, _ = parseInt(minStr)
+	}
+	if hasMax {
+		maxVal, _ = parseInt(maxStr)
+	}
+
+	switch event.Key {
+	case terminal.KeyUp:
+		n := 0
+		if val != "" {
+			n, _ = parseInt(val)
+		}
+		n += step
+		if hasMax && n > maxVal {
+			n = maxVal
+		}
+		a.formValues[node] = itoa(n)
+		a.formCursors[node] = len([]rune(a.formValues[node]))
+		a.renderFrame()
+		return true
+
+	case terminal.KeyDown:
+		n := 0
+		if val != "" {
+			n, _ = parseInt(val)
+		}
+		n -= step
+		if hasMin && n < minVal {
+			n = minVal
+		}
+		a.formValues[node] = itoa(n)
+		a.formCursors[node] = len([]rune(a.formValues[node]))
+		a.renderFrame()
+		return true
+
+	default:
+		// Fall through to text editing for typing numbers
+		return a.handleTextEdit(event, node)
+	}
+}
+
+// parseInt parses a string to int, returning 0 and an error on failure.
+func parseInt(s string) (int, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty string")
+	}
+	n := 0
+	neg := false
+	start := 0
+	if s[0] == '-' {
+		neg = true
+		start = 1
+	} else if s[0] == '+' {
+		start = 1
+	}
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			return 0, fmt.Errorf("invalid number: %s", s)
+		}
+	}
+	if neg {
+		return -n, nil
+	}
+	return n, nil
 }
 
 // focusNode finds the given node in formFocusables and sets focus to it.

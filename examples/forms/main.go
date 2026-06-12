@@ -65,6 +65,16 @@ func main() {
 					</select>
 				</div>
 
+				<div class="field">
+					<label for="search">Search</label>
+					<input id="search" type="search" placeholder="Search..." />
+				</div>
+
+				<div class="field">
+					<label for="age">Age</label>
+					<input id="age" type="number" value="25" />
+				</div>
+
 				<div class="button-row">
 					<button class="btn primary" type="submit">Login</button>
 					<button class="btn secondary" type="reset">Reset</button>
@@ -72,7 +82,7 @@ func main() {
 				</div>
 			</form>
 
-			<p class="hint">Tab to navigate · Type to edit · Enter/Space to toggle · Esc to unfocus · q to quit</p>
+			<p class="hint">Tab to navigate · Type to edit · Enter/Space to toggle · Esc to clear search or unfocus · q to quit</p>
 		</div>
 	`)
 
