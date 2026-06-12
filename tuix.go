@@ -1205,12 +1205,146 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 	case "button", "a":
 		// These already have text children — just ensure focused styling
 		// Nothing to do here for content
+
+	case "progress":
+		a.prepareProgressDOM(node)
+
+	case "meter":
+		a.prepareMeterDOM(node)
 	}
 
 	// Recurse into children
 	for _, child := range node.Children {
 		a.prepareFormDOM(child)
 	}
+}
+
+// prepareProgressDOM renders a <progress> element as an ASCII progress bar.
+func (a *App) prepareProgressDOM(node *dom.Node) {
+	valueStr := node.GetAttribute("value")
+	maxStr := node.GetAttribute("max")
+
+	max := 100.0
+	if maxStr != "" {
+		if m, err := parseInt(maxStr); err == nil && m > 0 {
+			max = float64(m)
+		}
+	}
+
+	// Indeterminate: no value attribute
+	if valueStr == "" {
+		// Show indeterminate state
+		a.setInputTextChild(node, " [∘∘∘∘∘∘∘∘∘∘]")
+		return
+	}
+
+	value := 0.0
+	if v, err := parseInt(valueStr); err == nil {
+		value = float64(v)
+	}
+	if value < 0 {
+		value = 0
+	}
+	if value > max {
+		value = max
+	}
+
+	// Bar width is 10 characters
+	barWidth := 10
+	filled := int((value / max) * float64(barWidth))
+	if filled > barWidth {
+		filled = barWidth
+	}
+
+	bar := "["
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "="
+		} else if i == filled && filled < barWidth {
+			bar += ">"
+		} else {
+			bar += " "
+		}
+	}
+
+	pct := int((value / max) * 100)
+	bar += "] "
+	if value == max {
+		bar += "100%"
+	} else if pct < 10 {
+		bar += "  " + itoa(pct) + "%"
+	} else if pct < 100 {
+		bar += " " + itoa(pct) + "%"
+	} else {
+		bar += itoa(pct) + "%"
+	}
+
+	a.setInputTextChild(node, bar)
+}
+
+// prepareMeterDOM renders a <meter> element as an ASCII gauge.
+func (a *App) prepareMeterDOM(node *dom.Node) {
+	valueStr := node.GetAttribute("value")
+	minStr := node.GetAttribute("min")
+	maxStr := node.GetAttribute("max")
+	lowStr := node.GetAttribute("low")
+	highStr := node.GetAttribute("high")
+	optimumStr := node.GetAttribute("optimum")
+
+	min := 0.0
+	if minStr != "" {
+		if m, err := parseInt(minStr); err == nil {
+			min = float64(m)
+		}
+	}
+	max := 1.0
+	if maxStr != "" {
+		if m, err := parseInt(maxStr); err == nil && m > 0 {
+			max = float64(m)
+		}
+	}
+	value := 0.0
+	if valueStr != "" {
+		if v, err := parseInt(valueStr); err == nil {
+			value = float64(v)
+		}
+	}
+	_ = lowStr
+	_ = highStr
+	_ = optimumStr
+
+	if value < min {
+		value = min
+	}
+	if value > max {
+		value = max
+	}
+
+	range_ := max - min
+	if range_ <= 0 {
+		range_ = 1
+	}
+
+	barWidth := 10
+	filled := int(((value - min) / range_) * float64(barWidth))
+	if filled > barWidth {
+		filled = barWidth
+	}
+	if filled < 0 {
+		filled = 0
+	}
+
+	bar := "["
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "█"
+		} else {
+			bar += "░"
+		}
+	}
+	bar += "]"
+
+	a.setInputTextChild(node, bar)
 }
 
 // setInputTextChild sets or replaces the text child of a node (for void elements like input).

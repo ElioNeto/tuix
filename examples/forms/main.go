@@ -75,6 +75,16 @@ func main() {
 					<input id="age" type="number" value="25" />
 				</div>
 
+				<div class="field">
+					<label>Progress</label>
+					<progress value="65" max="100"></progress>
+				</div>
+
+				<div class="field">
+					<label>Meter</label>
+					<meter value="0.6" min="0" max="1" low="0.3" high="0.7" optimum="0.5"></meter>
+				</div>
+
 				<div class="button-row">
 					<button class="btn primary" type="submit">Login</button>
 					<button class="btn secondary" type="reset">Reset</button>
