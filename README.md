@@ -255,7 +255,7 @@ Tuix parses a subset of HTML. Tags, attributes, classes, and IDs work as expecte
 | Descendant | `div p` | Matches `p` inside `div` |
 | Child | `div > p` | Matches direct child |
 | Adjacent | `h1 + p` | Matches `p` immediately after `h1` |
-| Pseudo-class | `:hover`, `:focus`, `:focus-visible`, `:focus-within`, `:disabled`, `:enabled`, `:required`, `:optional`, `:read-only`, `:read-write`, `:placeholder-shown` | Matches dynamic element state |
+| Pseudo-class | `:hover`, `:focus`, `:focus-visible`, `:focus-within`, `:disabled`, `:enabled`, `:required`, `:optional`, `:read-only`, `:read-write`, `:placeholder-shown`, `:valid`, `:invalid` | Matches dynamic element state |
 | Comma list | `h1, h2, h3` | Multiple selectors share the same declarations |
 
 ### Colors

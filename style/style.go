@@ -535,6 +535,12 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 			return !node.HasAttribute("readonly")
 		case "placeholder-shown":
 			return node.HasAttribute("placeholder-shown")
+		case "valid":
+			// An element is valid if it has no 'required' attribute, or if required
+			// and has a non-empty value (checked via the 'invalid' attribute)
+			return !node.HasAttribute("invalid")
+		case "invalid":
+			return node.HasAttribute("invalid")
 		default:
 			return false
 		}

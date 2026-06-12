@@ -26,7 +26,7 @@ func main() {
 
 				<div class="field">
 					<label for="email">Email</label>
-					<input id="email" type="email" placeholder="user@example.com" />
+					<input id="email" type="email" placeholder="user@example.com" required />
 				</div>
 
 				<div class="field">
@@ -222,6 +222,12 @@ func main() {
 		}
 		input:placeholder-shown {
 			color: #666;
+		}
+		input:invalid {
+			border-color: #e74c3c;
+		}
+		input:valid {
+			border-color: #2ecc71;
 		}
 		.hint { text-align: center; color: #555; margin-top: 1; }
 	`)

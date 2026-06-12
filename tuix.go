@@ -1787,6 +1787,22 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		}
 	}
 
+	// Set invalid attribute for :valid/:invalid pseudo-class matching
+	if tag == "input" || tag == "textarea" || tag == "select" {
+		isRequired := node.HasAttribute("required")
+		val := a.formValues[node]
+		hasValue := val != ""
+		if tag == "select" {
+			// Select always has a value (first option by default)
+			hasValue = true
+		}
+		if isRequired && !hasValue {
+			node.SetAttribute("invalid", "")
+		} else {
+			delete(node.Attributes, "invalid")
+		}
+	}
+
 	// Recurse into children
 	for _, child := range node.Children {
 		a.prepareFormDOM(child)
