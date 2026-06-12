@@ -143,6 +143,73 @@ func NewTrue(r, g, b uint8) Color {
 	return Color{Type: ColorTrue, R: r, G: g, B: b}
 }
 
+// HSL creates a Color from HSL (Hue, Saturation, Lightness) values.
+// h: 0-360 degrees, s: 0-100 (percent), l: 0-100 (percent)
+func HSL(h, s, l float64) Color {
+	r, g, b := hslToRGB(h, s/100, l/100)
+	return Color{Type: ColorTrue, R: r, G: g, B: b}
+}
+
+// HSLA creates a Color from HSLA values with alpha.
+func HSLA(h, s, l, a float64) Color {
+	r, g, b := hslToRGB(h, s/100, l/100)
+	_ = a // alpha not stored in Color struct
+	return Color{Type: ColorTrue, R: r, G: g, B: b}
+}
+
+// hslToRGB converts HSL (hue 0-360, s 0-1, l 0-1) to RGB 0-255.
+func hslToRGB(h, s, l float64) (uint8, uint8, uint8) {
+	// Normalize hue to 0-360
+	h = normalizeHue(h)
+	if s < 0 { s = 0 }
+	if s > 1 { s = 1 }
+	if l < 0 { l = 0 }
+	if l > 1 { l = 1 }
+
+	c := (1 - abs(2*l-1)) * s
+	x := c * (1 - abs(mod(h/60, 2)-1))
+	m := l - c/2
+
+	var r, g, b float64
+	switch {
+	case h < 60:
+		r, g, b = c, x, 0
+	case h < 120:
+		r, g, b = x, c, 0
+	case h < 180:
+		r, g, b = 0, c, x
+	case h < 240:
+		r, g, b = 0, x, c
+	case h < 300:
+		r, g, b = x, 0, c
+	default:
+		r, g, b = c, 0, x
+	}
+
+	return uint8((r + m) * 255), uint8((g + m) * 255), uint8((b + m) * 255)
+}
+
+// abs returns the absolute value of a float64.
+func abs(x float64) float64 {
+	if x < 0 { return -x }
+	return x
+}
+
+// mod implements floating-point modulo (always positive result).
+func mod(x, m float64) float64 {
+	if m == 0 { return 0 }
+	x = x - m*float64(int(x/m))
+	if x < 0 { x += m }
+	return x
+}
+
+// normalizeHue normalizes hue to 0-360 range.
+func normalizeHue(h float64) float64 {
+	h = mod(h, 360)
+	if h < 0 { h += 360 }
+	return h
+}
+
 // Predefined common colors as exported constants for convenience.
 var (
 	Black       = Color{Type: ColorTrue, R: 0, G: 0, B: 0}
@@ -221,6 +288,16 @@ func ParseColor(s string) (Color, bool) {
 	// rgba() function
 	if strings.HasPrefix(strings.ToLower(s), "rgba(") {
 		return parseRGBA(s)
+	}
+
+	// hsl() function
+	if strings.HasPrefix(strings.ToLower(s), "hsl(") {
+		return parseHSL(s)
+	}
+
+	// hsla() function
+	if strings.HasPrefix(strings.ToLower(s), "hsla(") {
+		return parseHSLA(s)
 	}
 
 	// ansi() function
@@ -323,6 +400,69 @@ func parseRGBA(s string) (Color, bool) {
 	}
 
 	return NewTrue(uint8(r), uint8(g), uint8(b)), true
+}
+
+// parseHSL parses an hsl(h, s%, l%) color string.
+func parseHSL(s string) (Color, bool) {
+	// hsl(h, s%, l%)
+	inner := strings.TrimSpace(s[4 : len(s)-1])
+	parts := strings.Split(inner, ",")
+	if len(parts) != 3 {
+		return Color{}, false
+	}
+
+	h, err1 := parseHSLValue(strings.TrimSpace(parts[0]))
+	sat, err2 := parseHSLPercent(strings.TrimSpace(parts[1]))
+	l, err3 := parseHSLPercent(strings.TrimSpace(parts[2]))
+	if err1 != nil || err2 != nil || err3 != nil {
+		return Color{}, false
+	}
+
+	return HSL(h, sat, l), true
+}
+
+// parseHSLA parses an hsla(h, s%, l%, a) color string.
+func parseHSLA(s string) (Color, bool) {
+	// hsla(h, s%, l%, a)
+	inner := strings.TrimSpace(s[5 : len(s)-1])
+	parts := strings.Split(inner, ",")
+	if len(parts) != 4 {
+		return Color{}, false
+	}
+
+	h, err1 := parseHSLValue(strings.TrimSpace(parts[0]))
+	sat, err2 := parseHSLPercent(strings.TrimSpace(parts[1]))
+	l, err3 := parseHSLPercent(strings.TrimSpace(parts[2]))
+	_, err4 := parseHSLAlpha(strings.TrimSpace(parts[3]))
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return Color{}, false
+	}
+
+	return HSL(h, sat, l), true
+}
+
+// parseHSLValue parses a hue value (0-360, can be a float).
+func parseHSLValue(s string) (float64, error) {
+	return strconv.ParseFloat(strings.TrimSuffix(s, "deg"), 64)
+}
+
+// parseHSLPercent parses a percentage value (0-100) or a 0-1 float.
+func parseHSLPercent(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, "%") {
+		return strconv.ParseFloat(s[:len(s)-1], 64)
+	}
+	// Treat as 0-1 value, convert to percentage
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, err
+	}
+	return v * 100, nil
+}
+
+// parseHSLAlpha parses an alpha value for hsla().
+func parseHSLAlpha(s string) (float64, error) {
+	return strconv.ParseFloat(strings.TrimSpace(s), 64)
 }
 
 func parseANSIFunc(s string) (Color, bool) {

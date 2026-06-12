@@ -162,3 +162,91 @@ func TestParse256Function(t *testing.T) {
 		t.Fatalf("expected Color256 42, got type=%v index=%d", c.Type, c.Index)
 	}
 }
+
+func TestHSLRed(t *testing.T) {
+	c := HSL(0, 100, 50)
+	if c.R != 255 || c.G != 0 || c.B != 0 {
+		t.Fatalf("HSL(0,100,50) expected (255,0,0), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLGreen(t *testing.T) {
+	c := HSL(120, 100, 50)
+	if c.R != 0 || c.G != 255 || c.B != 0 {
+		t.Fatalf("HSL(120,100,50) expected (0,255,0), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLBlue(t *testing.T) {
+	c := HSL(240, 100, 50)
+	if c.R != 0 || c.G != 0 || c.B != 255 {
+		t.Fatalf("HSL(240,100,50) expected (0,0,255), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLBlack(t *testing.T) {
+	c := HSL(0, 0, 0)
+	if c.R != 0 || c.G != 0 || c.B != 0 {
+		t.Fatalf("HSL(0,0,0) expected (0,0,0), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLWhite(t *testing.T) {
+	c := HSL(0, 0, 100)
+	if c.R != 255 || c.G != 255 || c.B != 255 {
+		t.Fatalf("HSL(0,0,100) expected (255,255,255), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLOrange(t *testing.T) {
+	c := HSL(30, 100, 50)
+	// Orange is approximately (255, 127, 0)
+	if c.R != 255 || c.G != 127 || c.B != 0 {
+		t.Fatalf("HSL(30,100,50) expected (255,127,0), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestParseHSLFunction(t *testing.T) {
+	c, ok := ParseColor("hsl(120, 100%, 50%)")
+	if !ok {
+		t.Fatal("failed to parse hsl(120, 100%, 50%)")
+	}
+	if c.R != 0 || c.G != 255 || c.B != 0 {
+		t.Fatalf("hsl(120,100,50) expected (0,255,0), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestParseHSLAFunction(t *testing.T) {
+	c, ok := ParseColor("hsla(240, 100%, 50%, 0.5)")
+	if !ok {
+		t.Fatal("failed to parse hsla(240, 100%, 50%, 0.5)")
+	}
+	if c.R != 0 || c.G != 0 || c.B != 255 {
+		t.Fatalf("hsla(240,100,50,0.5) expected (0,0,255), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLTeal(t *testing.T) {
+	c := HSL(180, 100, 50)
+	if c.R != 0 || c.G != 255 || c.B != 255 {
+		t.Fatalf("HSL(180,100,50) expected (0,255,255), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLMagenta(t *testing.T) {
+	c := HSL(300, 100, 50)
+	if c.R != 255 || c.G != 0 || c.B != 255 {
+		t.Fatalf("HSL(300,100,50) expected (255,0,255), got (%d,%d,%d)", c.R, c.G, c.B)
+	}
+}
+
+func TestHSLLightness(t *testing.T) {
+	// 75% lightness should be lighter than 25%
+	dark := HSL(0, 100, 25)
+	light := HSL(0, 100, 75)
+	// At 25% lightness, red should be ~128
+	// At 75% lightness, red should be ~255
+	if dark.R >= light.R {
+		t.Fatalf("expected dark R < light R: %d >= %d", dark.R, light.R)
+	}
+}
