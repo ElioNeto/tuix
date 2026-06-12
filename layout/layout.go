@@ -731,6 +731,11 @@ func (e *LayoutEngine) layoutFlex(container *Box) {
 		if item.ComputedWidth == 0 && item.Style.Display == style.DisplayInline {
 			item.ComputedWidth = textContentWidth(item)
 		}
+		// For block elements without explicit width in a flex container,
+		// compute from text content as well (flex items should shrink to content)
+		if item.ComputedWidth == 0 && item.Style.Display == style.DisplayBlock {
+			item.ComputedWidth = textContentWidth(item)
+		}
 		if item.ComputedHeight == 0 {
 			item.ComputedHeight = 1
 		}
