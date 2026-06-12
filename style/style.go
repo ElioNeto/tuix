@@ -1177,6 +1177,14 @@ func applyBorder(style *ComputedStyle, v css.Value) {
 					style.BorderRight.Style = bs
 					style.BorderBottom.Style = bs
 					style.BorderLeft.Style = bs
+					// Default border width if not explicitly set
+					if style.BorderTop.Width.Value == 0 {
+						w := Length{Value: 1, Unit: LengthPx}
+						style.BorderTop.Width = w
+						style.BorderRight.Width = w
+						style.BorderBottom.Width = w
+						style.BorderLeft.Width = w
+					}
 				case "transparent", "currentcolor":
 					cv := cssColorToColorValue(sv)
 					style.BorderTop.Color = cv
