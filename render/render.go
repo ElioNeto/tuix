@@ -519,14 +519,20 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 	hasClip := len(p.clipStack) > 0
 
 	// Determine the containing block for alignment.
-	// The text box itself may be narrower than its parent; alignment should
-	// happen relative to the parent's content area.
 	alignBox := box
 	if box.Parent != nil && (box.Parent.Type == layout.BoxBlock || box.Parent.Type == layout.BoxRoot) {
 		alignBox = box.Parent
 	}
-	contentX := alignBox.ContentRect.X
+	// Use the box's own X position as the starting point (for inline layout)
+	contentX := box.ContentRect.X
+	if contentX == 0 && box.Parent != nil {
+		contentX = box.Rect.X
+	}
 	availableWidth := alignBox.ContentRect.Width
+	// Account for the box's offset from the parent's left edge
+	if contentX > alignBox.ContentRect.X {
+		availableWidth -= (contentX - alignBox.ContentRect.X)
+	}
 	if availableWidth <= 0 {
 		contentX = box.Rect.X
 		availableWidth = box.Rect.Width

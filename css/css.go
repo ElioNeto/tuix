@@ -197,6 +197,9 @@ func (p *Parser) Parse() (*Stylesheet, []error) {
 	p.skipWhitespace()
 
 	for p.pos < len(p.input) {
+		// Skip whitespace before checking for comments or selectors
+		p.skipWhitespace()
+
 		// Skip comments
 		p.skipComments()
 

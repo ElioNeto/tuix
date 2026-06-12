@@ -456,8 +456,18 @@ func (e *LayoutEngine) layoutInline(container *Box, inlineChildren []*Box, curso
 		}
 	}
 
-	for _, child := range inlineChildren {
+		for _, child := range inlineChildren {
 		if child.Type == BoxInline {
+			// Add space before this inline element if not at start of line
+			if currentLineWidth > 0 {
+				currentLineRuns = append(currentLineRuns, &run{
+					box:       child,
+					text:      " ",
+					wordWidth: 1,
+				})
+				currentLineWidth++
+			}
+
 			// Inline element: determine its content size
 			child.ComputedWidth = resolveLength(child.Style.Width, availableWidth)
 			if child.ComputedWidth == 0 {
@@ -527,13 +537,17 @@ func (e *LayoutEngine) layoutInline(container *Box, inlineChildren []*Box, curso
 	for li, line := range lines {
 		lineHeight := lineHeights[li]
 		cursorX := 0.0
+		positioned := make(map[*Box]bool) // track boxes already positioned
 
 		for _, r := range line {
 			box := r.box
 
-			// Set position relative to container's content area
-			box.Rect.X = int(contentX + cursorX)
-			box.Rect.Y = int(*cursorY)
+			// Only position if not already positioned (multiple runs may share same box)
+			if !positioned[box] {
+				positioned[box] = true
+				box.Rect.X = int(contentX + cursorX)
+				box.Rect.Y = int(*cursorY)
+			}
 
 			if r.text != "" && box.Type == BoxText {
 				// For text runs, set the box to represent this word

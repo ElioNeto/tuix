@@ -39,6 +39,8 @@ func main() {
 			<div class="card">
 				<h2>Progress (determinate)</h2>
 				<progress value="65" max="100"></progress>
+				<progress value="15" max="100"></progress>
+				<progress value="90" max="100"></progress>
 			</div>
 
 			<div class="card">
@@ -67,10 +69,10 @@ func main() {
 			margin-bottom: 1;
 		}
 		.card {
-			margin: 2;
+			margin: 1;
 			border: solid;
 			border-color: #00d444;
-			padding: 0 ;
+			padding: 1;
 		}
 		code {
 			color: #00d4aa;
@@ -82,17 +84,17 @@ func main() {
 			font-weight: bold;
 		}
 		.animate-pulse {
-			color: #1d99bfff;
+			color: #661dbfff;
 		}
 		.animate-pulse[pulsing] {
-			color: #00ff00;
+			color: #00a2ffff;
 			font-weight: bold;
 		}
 		.animate-blink {
-			color: #58109cff;
+			color: #c70d16ff;
 		}
 		.animate-blink[blinking] {
-			color: #00ff00;
+			color: #dee3deff;
 		}
 	
 	`)
