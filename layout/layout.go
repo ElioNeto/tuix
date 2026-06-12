@@ -25,6 +25,10 @@ const (
 )
 
 // Box represents a rectangular layout box in the formatting tree.
+//
+// Rect represents the BORDER BOX (content + padding + border).
+// Margins are outside the border box — they add spacing between boxes
+// but are not included in Rect.Width/Height.
 type Box struct {
 	Type      BoxType
 	Node      *dom.Node
@@ -36,12 +40,12 @@ type Box struct {
 	// Content area (inside padding and border)
 	ContentRect geometry.Rect
 
-	// Box model edges
+	// Box model edges (outside the border box / Rect)
 	Margin    geometry.Edges
 	Border    geometry.Edges
 	Padding   geometry.Edges
 
-	// Computed dimensions
+	// Computed dimensions (content area only, not including padding/border/margin)
 	ComputedWidth  float64
 	ComputedHeight float64
 }
@@ -58,6 +62,18 @@ func (b *Box) TotalHeight() float64 {
 	return b.Margin.Top + b.Border.Top + b.Padding.Top +
 		b.ComputedHeight +
 		b.Padding.Bottom + b.Border.Bottom + b.Margin.Bottom
+}
+
+// BorderWidth returns just the border+padding+content (no margins).
+func (b *Box) BorderWidth() float64 {
+	return b.Border.Left + b.Padding.Left + b.ComputedWidth +
+		b.Padding.Right + b.Border.Right
+}
+
+// BorderHeight returns just the border+padding+content (no margins).
+func (b *Box) BorderHeight() float64 {
+	return b.Border.Top + b.Padding.Top + b.ComputedHeight +
+		b.Padding.Bottom + b.Border.Bottom
 }
 
 // LayoutEngine takes a styled DOM tree and produces a box tree with positions.
@@ -218,8 +234,9 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 	box.ComputedHeight = resolveLength(box.Style.Height, e.ViewHeight)
 
 	// Update full rect (position will be set by calculatePositions)
-	box.Rect.Width = int(box.TotalWidth())
-	box.Rect.Height = int(box.TotalHeight())
+	// Rect.Width/Height is the BORDER BOX (content + padding + border), no margins.
+	box.Rect.Width = int(box.BorderWidth())
+	box.Rect.Height = int(box.BorderHeight())
 
 	// Content dimensions (position set later by calculatePositions)
 	box.ContentRect.Width = int(box.ComputedWidth)
@@ -274,16 +291,16 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 			child.ComputedHeight = resolveLength(child.Style.Height, e.ViewHeight)
 		}
 
-		// Position relative to this box's Rect (top-left of border edge)
-		contentOffsetX := box.Margin.Left + box.Border.Left + box.Padding.Left
-		contentOffsetY := box.Margin.Top + box.Border.Top + box.Padding.Top
+		// Position relative to this box's Rect (border box)
+		// Margins are outside the border box — margin.Left shifts X, margin.Top shifts Y.
+		contentOffsetX := box.Border.Left + box.Padding.Left
+		contentOffsetY := box.Border.Top + box.Padding.Top
 		child.Rect.X = int(contentOffsetX + child.Margin.Left)
 		child.Rect.Y = int(contentOffsetY + cursorY + child.Margin.Top)
-		child.Rect.Width = int(child.ComputedWidth + child.Margin.Left + child.Margin.Right +
-			child.Border.Left + child.Border.Right +
+		// Rect.Width/Height is the border box (no margins)
+		child.Rect.Width = int(child.ComputedWidth + child.Border.Left + child.Border.Right +
 			child.Padding.Left + child.Padding.Right)
-		child.Rect.Height = int(child.ComputedHeight + child.Margin.Top + child.Margin.Bottom +
-			child.Border.Top + child.Border.Bottom +
+		child.Rect.Height = int(child.ComputedHeight + child.Border.Top + child.Border.Bottom +
 			child.Padding.Top + child.Padding.Bottom)
 
 		// Layout children of this child (recursive)
@@ -297,7 +314,7 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 		box.ComputedHeight = cursorY +
 			box.Padding.Top + box.Padding.Bottom +
 			box.Border.Top + box.Border.Bottom
-		box.Rect.Height = int(box.TotalHeight())
+		box.Rect.Height = int(box.BorderHeight())
 		box.ContentRect.Height = int(box.ComputedHeight -
 			box.Padding.Top - box.Padding.Bottom -
 			box.Border.Top - box.Border.Bottom)
@@ -305,19 +322,21 @@ func (e *LayoutEngine) layoutBlock(box *Box) {
 }
 
 // calculatePositions sets the absolute position for a box and its children.
-// box.Rect is relative to parent's Rect; after this call it becomes absolute.
+// box.Rect is the border box (no margins) relative to parent's border box.
+// After this call, positions become absolute.
 func (e *LayoutEngine) calculatePositions(box *Box, parentX, parentY float64) {
-	// Make this box's position absolute
+	// Make this box's position absolute (border box position)
 	box.Rect.X += int(parentX)
 	box.Rect.Y += int(parentY)
 
-	// Content area is now absolute too
-	box.ContentRect.X = box.Rect.X + int(box.Margin.Left+box.Border.Left+box.Padding.Left)
-	box.ContentRect.Y = box.Rect.Y + int(box.Margin.Top+box.Border.Top+box.Padding.Top)
+	// Content area is absolute too — starts inside padding+border
+	box.ContentRect.X = box.Rect.X + int(box.Border.Left+box.Padding.Left)
+	box.ContentRect.Y = box.Rect.Y + int(box.Border.Top+box.Padding.Top)
 	box.ContentRect.Width = int(box.ComputedWidth)
 	box.ContentRect.Height = int(box.ComputedHeight)
 
-	// Recurse into children with this box's absolute position
+	// Recurse into children with this box's absolute position.
+	// Children are positioned relative to this box's border box origin.
 	for _, child := range box.Children {
 		e.calculatePositions(child, float64(box.Rect.X), float64(box.Rect.Y))
 	}

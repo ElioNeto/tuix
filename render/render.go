@@ -272,52 +272,86 @@ func (p *Painter) paintText(box *layout.Box, fg, bg color.Color) {
 		return
 	}
 
-	x := box.Rect.X
-	y := box.Rect.Y
-
-	// Calculate available width
-	availableWidth := box.Rect.Width
-	if box.Parent != nil {
-		availableWidth = box.Parent.ContentRect.Width
+	// Determine the containing block for alignment.
+	// The text box itself may be narrower than its parent; alignment should
+	// happen relative to the parent's content area.
+	alignBox := box
+	if box.Parent != nil && (box.Parent.Type == layout.BoxBlock || box.Parent.Type == layout.BoxRoot) {
+		alignBox = box.Parent
+	}
+	contentX := alignBox.ContentRect.X
+	availableWidth := alignBox.ContentRect.Width
+	if availableWidth <= 0 {
+		contentX = box.Rect.X
+		availableWidth = box.Rect.Width
 	}
 
-	charWidth := 1 // Each character occupies one cell
+	// Determine text alignment — inherit from parent if not set
+	align := box.Style.TextAlign
+	if align == style.TextAlignLeft && box.Parent != nil && box.Parent.Style.TextAlign != style.TextAlignLeft {
+		align = box.Parent.Style.TextAlign
+	}
+
+	contentY := box.ContentRect.Y
 
 	words := strings.Fields(text)
+	if len(words) == 0 {
+		return
+	}
+
 	wordIndex := 0
 
-	for row := 0; row < box.Rect.Height && wordIndex < len(words); row++ {
-		currentX := x
+	for row := 0; wordIndex < len(words); row++ {
+		// Calculate how many words fit on this line and the line width
+		lineWords := make([]string, 0)
 		lineWidth := 0
-
-		for wordIndex < len(words) {
-			word := words[wordIndex]
-			wordLen := len(word) * charWidth
-
-			if lineWidth > 0 && lineWidth+1+wordLen > availableWidth {
+		for i := wordIndex; i < len(words); i++ {
+			w := words[i]
+			wlen := len(w)
+			if len(lineWords) > 0 && lineWidth+1+wlen > availableWidth {
 				break
 			}
-
+			lineWords = append(lineWords, w)
 			if lineWidth > 0 {
-				// Add space
-				if currentX < p.Canvas.Width {
-					p.Canvas.Set(currentX, y+row, ' ', fg, bg)
+				lineWidth++ // space
+			}
+			lineWidth += wlen
+		}
+
+		if len(lineWords) == 0 {
+			wordIndex++
+			continue
+		}
+
+		// Calculate start X based on alignment
+		startX := contentX
+		switch align {
+		case style.TextAlignCenter:
+			startX = contentX + (availableWidth-lineWidth)/2
+		case style.TextAlignRight:
+			startX = contentX + availableWidth - lineWidth
+		}
+
+		y := contentY + row
+		currentX := startX
+
+		for i, word := range lineWords {
+			if i > 0 {
+				// Space between words
+				if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+					p.Canvas.Set(currentX, y, ' ', fg, bg)
 				}
 				currentX++
-				lineWidth++
 			}
-
-			// Paint the word
-			for i, ch := range word {
-				cx := currentX + i
-				if cx >= 0 && cx < p.Canvas.Width && y+row >= 0 && y+row < p.Canvas.Height {
-					p.Canvas.Set(cx, y+row, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
+			for _, ch := range word {
+				if currentX >= 0 && currentX < p.Canvas.Width && y >= 0 && y < p.Canvas.Height {
+					p.Canvas.Set(currentX, y, ch, fg, bg, box.Style.FontWeight >= 700, false, false)
 				}
+				currentX++
 			}
-			currentX += wordLen
-			lineWidth += wordLen
-			wordIndex++
 		}
+
+		wordIndex += len(lineWords)
 	}
 }
 
