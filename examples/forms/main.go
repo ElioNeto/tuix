@@ -105,6 +105,11 @@ func main() {
 					<input type="text" list="langs" placeholder="Type a language..." />
 				</div>
 
+				<div class="field">
+					<label>File</label>
+					<input type="file" />
+				</div>
+
 				<div class="button-row">
 					<button class="btn primary" type="submit">Login</button>
 					<button class="btn secondary" type="reset">Reset</button>

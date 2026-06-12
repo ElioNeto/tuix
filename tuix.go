@@ -14,6 +14,8 @@ package tuix
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -1612,6 +1614,19 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 			}
 			a.prepareDateDOM(node, val)
 
+		case "file":
+			// File input
+			val := a.formValues[node]
+			if val == "" {
+				val = "Choose file..."
+			}
+			display := "📎 " + val
+			isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
+			if isFocused {
+				display += " [Enter to browse]"
+			}
+			a.setInputTextChild(node, display)
+
 		default: // text, password, email, number, etc.
 			val := a.formValues[node]
 			isPassword := inputType == "password"
@@ -2253,6 +2268,9 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		case "date":
 			// Date input: arrow keys navigate segments, up/down adjust
 			return a.handleDateEdit(event, focused)
+		case "file":
+			// File input: Enter/Space opens file picker
+			return a.handleFileEdit(event, focused)
 		default: // text, password, email, etc.
 			return a.handleTextEdit(event, focused)
 		}
@@ -2748,6 +2766,80 @@ func (a *App) handleColorEdit(event terminal.Event, node *dom.Node) bool {
 		// All other keys are ignored
 		return true
 	}
+}
+
+// handleFileEdit handles keyboard input for <input type="file">.
+// Enter/Space opens a file picker dialog; typing edits the path directly.
+func (a *App) handleFileEdit(event terminal.Event, node *dom.Node) bool {
+	switch event.Key {
+	case terminal.KeyEnter, terminal.KeySpace:
+		a.openFilePicker(node)
+		return true
+	default:
+		return a.handleTextEdit(event, node)
+	}
+}
+
+// openFilePicker opens a modal file browser dialog.
+func (a *App) openFilePicker(node *dom.Node) {
+	// Get current directory (from value or cwd)
+	dir := a.formValues[node]
+	if dir != "" {
+		if fi, err := os.Stat(dir); err == nil && !fi.IsDir() {
+			dir = filepath.Dir(dir)
+		}
+	} else {
+		dir, _ = os.Getwd()
+	}
+
+	// Read directory entries
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		dir, _ = os.Getwd()
+		entries, _ = os.ReadDir(dir)
+	}
+
+	// Build file list HTML
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(`<div id="file-picker" style="padding: 1; background-color: #1a1a2e; border: solid #0f3460;">
+		<div style="color: #00d4aa; font-weight: bold; margin-bottom: 1;">📁 File Browser</div>
+		<div style="color: #555; margin-bottom: 1;">%s</div>
+		<div class="file-list">`, dir))
+
+	// Parent directory
+	sb.WriteString(`<div class="file-item" data-path=".." style="padding: 0 1; color: #00d4aa;">📁 ..</div>`)
+
+	// Directories first
+	for _, entry := range entries {
+		if entry.IsDir() {
+			name := entry.Name()
+			sb.WriteString(fmt.Sprintf(`<div class="file-item" data-path="%s" style="padding: 0 1; color: #00d4aa;">📁 %s</div>`, filepath.Join(dir, name), name))
+		}
+	}
+	// Files
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			name := entry.Name()
+			sb.WriteString(fmt.Sprintf(`<div class="file-item" data-path="%s" style="padding: 0 1;">📄 %s</div>`, filepath.Join(dir, name), name))
+		}
+	}
+
+	sb.WriteString(`</div>
+		<div style="margin-top: 1; color: #555;">↑↓ navigate · Enter select · Esc cancel</div>
+	</div>`)
+
+	// Show as modal
+	a.ShowModal(sb.String())
+	// On modal close, re-focus the form
+	modalNode := a.modalNode
+	_ = modalNode
+	a.onModalClose = func() {
+		a.formFocused = -1
+		a.renderFrame()
+	}
+
+	// Hook into form events for the file picker
+	a.formFocused = -1 // Temporarily unfocus to avoid conflicting with modal
 }
 
 // prepareDateDOM renders <input type="date"> with segment highlighting.
