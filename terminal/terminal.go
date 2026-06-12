@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 )
 
 // Terminal manages the raw terminal state and provides input/output channels.
@@ -584,29 +582,6 @@ func (t *Terminal) emitRune(r rune) {
 	}
 }
 
-// watchResize listens for SIGWINCH signals.
-func (t *Terminal) watchResize() {
-	defer t.wg.Done()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGWINCH)
-	defer signal.Stop(sig)
-
-	for {
-		select {
-		case <-t.done:
-			return
-		case <-sig:
-			w, h, err := t.Size()
-			if err == nil {
-				select {
-				case t.events <- Event{Type: EventResize, Width: w, Height: h}:
-				default:
-				}
-			}
-		}
-	}
-}
 
 // enterAltScreen switches to the alternate screen buffer.
 func (t *Terminal) enterAltScreen() {

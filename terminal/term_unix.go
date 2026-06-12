@@ -3,6 +3,8 @@
 package terminal
 
 import (
+	"os"
+	"os/signal"
 	"syscall"
 	"unsafe"
 )
@@ -93,4 +95,28 @@ func ioctlWinsize(fd uintptr) (*Winsize, error) {
 		return nil, err
 	}
 	return ws, nil
+}
+
+// watchResize listens for SIGWINCH signals (Unix-only).
+func (t *Terminal) watchResize() {
+	defer t.wg.Done()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGWINCH)
+	defer signal.Stop(sig)
+
+	for {
+		select {
+		case <-t.done:
+			return
+		case <-sig:
+			w, h, err := t.Size()
+			if err == nil {
+				select {
+				case t.events <- Event{Type: EventResize, Width: w, Height: h}:
+				default:
+				}
+			}
+		}
+	}
 }
