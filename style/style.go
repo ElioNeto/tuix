@@ -518,6 +518,17 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 			return hasFocusWithin(node)
 		case "hover":
 			return node.HasAttribute("hovered") || node.GetAttribute("hovered") != ""
+		case "disabled":
+			// Matches elements with a 'disabled' attribute
+			return node.HasAttribute("disabled")
+		case "enabled":
+			// Matches elements that do NOT have a 'disabled' attribute
+			// Only applies to form elements (input, textarea, select, button, etc.)
+			return !node.HasAttribute("disabled")
+		case "required":
+			return node.HasAttribute("required")
+		case "optional":
+			return !node.HasAttribute("required")
 		default:
 			return false
 		}
