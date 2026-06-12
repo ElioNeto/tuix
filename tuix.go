@@ -192,6 +192,11 @@ const designSystemCSS = `
 .my-1 { margin-top: 1; margin-bottom: 1; }
 .my-2 { margin-top: 2; margin-bottom: 2; }
 
+/* Animations — these apply dynamic effects via the animation system */
+.animate-spin   { font-weight: bold; }
+.animate-pulse  { }
+.animate-blink  { }
+
 /* Navbar */
 .navbar {
 	display: flex;
@@ -461,6 +466,12 @@ type App struct {
 	themeCSS         string // Generated CSS from the active theme
 	themeChanged     bool   // Flag to regenerate stylesheet on next render
 
+	// Animation state
+	animFrame      int           // Current animation frame counter
+	animTicker     *time.Ticker  // Periodic ticker for animations
+	animRunning    bool          // Whether animations are active
+	animTickerChan chan struct{} // Signal channel for animation ticks
+
 	// Datalist state
 	datalistMap      map[string][]string // datalist id → option texts
 	datalistInput    *dom.Node           // Input currently showing a datalist dropdown
@@ -476,6 +487,7 @@ func New() *App {
 		toastTimerChan: make(chan int, 64),
 		tooltipTimerChan: make(chan struct{}, 8),
 		datalistMap:    make(map[string][]string),
+		animTickerChan: make(chan struct{}, 8),
 	}
 }
 
@@ -845,6 +857,11 @@ func (a *App) Run() error {
 	// Initial render
 	a.renderFrame()
 
+	// Start animation ticker (ticks every 200ms for animations)
+	a.animTicker = time.NewTicker(200 * time.Millisecond)
+	defer a.animTicker.Stop()
+	a.animRunning = true
+
 	// Enter event loop
 	a.running = true
 	defer func() { a.running = false }()
@@ -865,6 +882,10 @@ func (a *App) Run() error {
 				a.tooltipText = a.tooltipPendingNode.GetAttribute("title")
 				a.renderFrame()
 			}
+		case <-a.animTicker.C:
+			// Animation frame tick
+			a.animFrame++
+			a.renderFrame()
 		}
 	}
 
@@ -1901,6 +1922,38 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 			node.SetAttribute("invalid", "")
 		} else {
 			delete(node.Attributes, "invalid")
+		}
+	}
+
+	// Apply animation classes — update element state based on animation frame
+	if node.HasClass("animate-spin") {
+		spinners := []string{"|", "/", "-", "\\"}
+		ch := spinners[a.animFrame%len(spinners)]
+		for _, child := range node.Children {
+			if child.Type == dom.NodeText {
+				if len(child.Data) > 0 {
+					runes := []rune(child.Data)
+					runes[len(runes)-1] = []rune(ch)[0]
+					child.Data = string(runes)
+				} else {
+					child.Data = ch
+				}
+				break
+			}
+		}
+	}
+	if node.HasClass("animate-pulse") {
+		if a.animFrame%4 < 2 {
+			delete(node.Attributes, "pulsing")
+		} else {
+			node.SetAttribute("pulsing", "")
+		}
+	}
+	if node.HasClass("animate-blink") {
+		if a.animFrame%2 == 0 {
+			node.SetAttribute("blinking", "")
+		} else {
+			delete(node.Attributes, "blinking")
 		}
 	}
 
