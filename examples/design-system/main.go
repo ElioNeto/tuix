@@ -106,7 +106,6 @@ func main() {
 		#app {
 			padding: 1;
 			background-color: #1a1a2e;
-			width: 100%;
 		}
 		h1 {
 			color: #00d4aa;

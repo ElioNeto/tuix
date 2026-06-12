@@ -2242,18 +2242,10 @@ func (a *App) setTextareaText(node *dom.Node, text string) {
 // buildFocusables scans the DOM and builds an ordered list of focusable elements.
 func (a *App) buildFocusables(node *dom.Node) {
 	a.formFocusables = nil
-	a.formFocused = -1
 	a.collectFocusables(node)
-	// Auto-focus: check for element with autofocus attribute
+	// Check for autofocus attribute
 	for i, n := range a.formFocusables {
 		if n.HasAttribute("autofocus") {
-			a.focusByIndex(i)
-			return
-		}
-	}
-	// If no autofocus found, check if any element already has focused attribute
-	for i, n := range a.formFocusables {
-		if n.HasAttribute("focused") {
 			a.focusByIndex(i)
 			return
 		}
@@ -2261,7 +2253,10 @@ func (a *App) buildFocusables(node *dom.Node) {
 }
 
 func (a *App) collectFocusables(node *dom.Node) {
-	if node == nil || node.Type != dom.NodeElement {
+	if node == nil {
+		return
+	}
+	if node.Type == dom.NodeText {
 		return
 	}
 
@@ -2269,18 +2264,13 @@ func (a *App) collectFocusables(node *dom.Node) {
 	isFocusableTag := focusableTags[tag]
 	hasTabIndex := node.HasAttribute("tabindex")
 
-	if isFocusableTag || hasTabIndex {
+	if node.Type == dom.NodeElement && (isFocusableTag || hasTabIndex) {
 		disabled := node.HasAttribute("disabled")
 		if !disabled {
 			tabindexStr := node.GetAttribute("tabindex")
 			ti := parseTabIndex(tabindexStr)
-			// tabindex < 0 means programmatically focusable only (not tab-navigable)
 			if ti >= 0 {
 				a.formFocusables = append(a.formFocusables, node)
-			} else if isFocusableTag {
-				// For focusable tags, tabindex="-1" makes them programmatically
-				// focusable but NOT tab-navigable. We track them separately.
-				// For now, simply don't add to focusables so Tab skips them.
 			}
 		}
 	}
