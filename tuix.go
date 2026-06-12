@@ -304,36 +304,44 @@ const designSystemCSS = `
 func themeToCSS(t Theme) string {
 	return fmt.Sprintf(`
 /* Theme colors */
-.bg-primary    { background-color: %s; }
-.bg-secondary  { background-color: %s; }
-.bg-accent     { background-color: %s; }
-.bg-success    { background-color: %s; }
-.bg-warning    { background-color: %s; }
-.bg-error      { background-color: %s; }
-.bg-surface    { background-color: %s; }
-.bg-background { background-color: %s; }
-.text-primary    { color: %s; }
-.text-secondary  { color: %s; }
-.text-accent     { color: %s; }
-.text-success    { color: %s; }
-.text-warning    { color: %s; }
-.text-error      { color: %s; }
-.text-muted      { color: %s; }
-.border-primary    { border-color: %s; }
-.border-secondary  { border-color: %s; }
-.border-accent     { border-color: %s; }
-.border-success    { border-color: %s; }
-.border-warning    { border-color: %s; }
-.border-error      { border-color: %s; }
+.bg-primary    { background-color: %[1]s; }
+.bg-secondary  { background-color: %[2]s; }
+.bg-accent     { background-color: %[3]s; }
+.bg-success    { background-color: %[4]s; }
+.bg-warning    { background-color: %[5]s; }
+.bg-error      { background-color: %[6]s; }
+.bg-surface    { background-color: %[7]s; }
+.bg-background { background-color: %[8]s; }
+.text-primary    { color: %[1]s; }
+.text-secondary  { color: %[2]s; }
+.text-accent     { color: %[3]s; }
+.text-success    { color: %[4]s; }
+.text-warning    { color: %[5]s; }
+.text-error      { color: %[6]s; }
+.text-muted      { color: %[9]s; }
+.border-primary    { border-color: %[1]s; }
+.border-secondary  { border-color: %[2]s; }
+.border-accent     { border-color: %[3]s; }
+.border-success    { border-color: %[4]s; }
+.border-warning    { border-color: %[5]s; }
+.border-error      { border-color: %[6]s; }
+
+/* Component theme overrides — these override the hardcoded design system colors */
+.btn-primary { background-color: %[1]s; }
+.btn-secondary { border-color: %[3]s; color: %[3]s; }
+.btn-danger { border-color: %[6]s; color: %[6]s; }
+.badge-primary { background-color: %[1]s; }
+.badge-success { background-color: %[4]s; }
+.badge-warning { background-color: %[5]s; }
+.badge-error { background-color: %[6]s; }
+.navbar { background-color: %[2]s; border-color: %[2]s; }
+.navbar .nav-brand { color: %[1]s; }
+.tab-active { color: %[1]s; border-bottom-color: %[1]s; }
 `,
 		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
 		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
 		colorToHex(t.Surface), colorToHex(t.Background),
-		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
-		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
 		colorToHex(t.Muted),
-		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
-		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
 	)
 }
 
