@@ -110,6 +110,18 @@ func main() {
 					<input type="file" />
 				</div>
 
+				<div class="field">
+					<label>Skills (multi-select)</label>
+					<select id="skills" multiple>
+						<option>Go</option>
+						<option selected>Python</option>
+						<option>JavaScript</option>
+						<option>Rust</option>
+						<option>Docker</option>
+						<option>Kubernetes</option>
+					</select>
+				</div>
+
 				<div class="button-row">
 					<button class="btn primary" type="submit">Login</button>
 					<button class="btn secondary" type="reset">Reset</button>

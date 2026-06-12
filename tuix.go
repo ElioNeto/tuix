@@ -1451,20 +1451,41 @@ func (a *App) initFormState(node *dom.Node) {
 		}
 
 	case "select":
-		// Find initially selected option
-		for _, child := range node.Children {
-			if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-				if child.HasAttribute("selected") || a.formValues[node] == "" {
-					// Use option's text content
-					for _, textChild := range child.Children {
-						if textChild.Type == dom.NodeText {
-							a.formValues[node] = textChild.Data
-							break
+		isMultiple := node.HasAttribute("multiple")
+		if isMultiple {
+			// Collect all initially selected options
+			var selectedOptions []string
+			for _, child := range node.Children {
+				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+					if child.HasAttribute("selected") {
+						for _, textChild := range child.Children {
+							if textChild.Type == dom.NodeText {
+								selectedOptions = append(selectedOptions, textChild.Data)
+								break
+							}
 						}
 					}
 				}
-				if child.HasAttribute("selected") {
-					break
+			}
+			if len(selectedOptions) > 0 {
+				a.formValues[node] = strings.Join(selectedOptions, "|")
+			}
+		} else {
+			// Find initially selected option
+			for _, child := range node.Children {
+				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+					if child.HasAttribute("selected") || a.formValues[node] == "" {
+						// Use option's text content
+						for _, textChild := range child.Children {
+							if textChild.Type == dom.NodeText {
+								a.formValues[node] = textChild.Data
+								break
+							}
+						}
+					}
+					if child.HasAttribute("selected") {
+						break
+					}
 				}
 			}
 		}
@@ -1687,8 +1708,13 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		a.setTextareaText(node, val)
 
 	case "select":
+		isMultiple := node.HasAttribute("multiple")
+		if isMultiple && a.formValues[node] == "" {
+			a.formValues[node] = ""
+		}
+
 		selected := a.formValues[node]
-		if selected == "" {
+		if !isMultiple && selected == "" {
 			// Find first option text
 			for _, child := range node.Children {
 				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
@@ -1721,21 +1747,50 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		// Check if focused — show dropdown
 		isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
 		if isFocused && len(options) > 0 {
-			// Show dropdown with options below (using newlines for line breaks)
 			var display string
-			display += " " + selected + " ▲▼\n"
-			for _, opt := range options {
-				prefix := "  ○ "
-				if opt == selected {
-					prefix = "  ● "
+			if isMultiple {
+				display += " " + selected + " [multi]\n"
+				selectedSet := make(map[string]bool)
+				if selected != "" {
+					for _, s := range strings.Split(selected, "|") {
+						selectedSet[strings.TrimSpace(s)] = true
+					}
 				}
-				display += prefix + opt + "\n"
+				for _, opt := range options {
+					if selectedSet[opt] {
+						display += "  [✓] " + opt + "\n"
+					} else {
+						display += "  [ ] " + opt + "\n"
+					}
+				}
+			} else {
+				display += " " + selected + " ▲▼\n"
+				for _, opt := range options {
+					prefix := "  ○ "
+					if opt == selected {
+						prefix = "  ● "
+					}
+					display += prefix + opt + "\n"
+				}
 			}
 			// Remove trailing newline
 			display = strings.TrimRight(display, "\n")
 			a.setInputTextChild(node, display)
 		} else {
-			a.setInputTextChild(node, " "+selected+" ")
+			if isMultiple {
+				// Show count of selected items
+				count := 0
+				if selected != "" {
+					count = len(strings.Split(selected, "|"))
+				}
+				display := fmt.Sprintf(" %d selected", count)
+				if count == 0 {
+					display = " (none selected)"
+				}
+				a.setInputTextChild(node, display)
+			} else {
+				a.setInputTextChild(node, " "+selected+" ")
+			}
 		}
 
 	case "button", "a":
@@ -2279,6 +2334,7 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		return a.handleTextEdit(event, focused)
 
 	case "select":
+		isMultiple := focused.HasAttribute("multiple")
 		if event.Key == terminal.KeyUp || event.Key == terminal.KeyLeft {
 			a.cycleSelectOption(focused, -1)
 			a.renderFrame()
@@ -2290,7 +2346,9 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 			return true
 		}
 		if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
-			// Toggle dropdown visibility via render
+			if isMultiple {
+				a.toggleMultiSelectOption(focused)
+			}
 			a.renderFrame()
 			return true
 		}
@@ -3213,6 +3271,67 @@ func (a *App) cycleSelectOption(node *dom.Node, dir int) {
 	}
 	// Current value not found — set to first option
 	a.formValues[node] = options[0]
+}
+
+// toggleMultiSelectOption toggles the selection state of the currently highlighted
+// option in a <select multiple> element.
+func (a *App) toggleMultiSelectOption(node *dom.Node) {
+	current := a.formValues[node]
+
+	// Find the current option and toggle it
+	var toggledOpt string
+	options := make([]string, 0)
+	for _, child := range node.Children {
+		if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
+			for _, textChild := range child.Children {
+				if textChild.Type == dom.NodeText {
+					opt := textChild.Data
+					options = append(options, opt)
+					if opt == current {
+						toggledOpt = opt
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if toggledOpt == "" && len(options) > 0 {
+		// No current selection — toggle first option
+		toggledOpt = options[0]
+	}
+
+	if toggledOpt == "" {
+		return
+	}
+
+	// Toggle the option in the pipe-separated list
+	selected := make(map[string]bool)
+	if a.formValues[node] != "" {
+		for _, s := range strings.Split(a.formValues[node], "|") {
+			selected[strings.TrimSpace(s)] = true
+		}
+	}
+
+	if selected[toggledOpt] {
+		delete(selected, toggledOpt)
+	} else {
+		selected[toggledOpt] = true
+	}
+
+	// Rebuild the value string
+	var sb strings.Builder
+	first := true
+	for _, opt := range options {
+		if selected[opt] {
+			if !first {
+				sb.WriteString("|")
+			}
+			sb.WriteString(opt)
+			first = false
+		}
+	}
+	a.formValues[node] = sb.String()
 }
 
 // parseTabIndex parses a tabindex attribute value string and returns the integer value.
