@@ -143,11 +143,43 @@ func NewTrue(r, g, b uint8) Color {
 	return Color{Type: ColorTrue, R: r, G: g, B: b}
 }
 
+// Predefined common colors as exported constants for convenience.
+var (
+	Black       = Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+	White       = Color{Type: ColorTrue, R: 255, G: 255, B: 255}
+	Red         = Color{Type: ColorTrue, R: 255, G: 0, B: 0}
+	Green       = Color{Type: ColorTrue, R: 0, G: 128, B: 0}
+	Blue        = Color{Type: ColorTrue, R: 0, G: 0, B: 255}
+	Yellow      = Color{Type: ColorTrue, R: 255, G: 255, B: 0}
+	Cyan        = Color{Type: ColorTrue, R: 0, G: 255, B: 255}
+	Magenta     = Color{Type: ColorTrue, R: 255, G: 0, B: 255}
+	Orange      = Color{Type: ColorTrue, R: 255, G: 165, B: 0}
+	Lime        = Color{Type: ColorTrue, R: 0, G: 255, B: 0}
+	Pink        = Color{Type: ColorTrue, R: 255, G: 192, B: 203}
+	Purple      = Color{Type: ColorTrue, R: 128, G: 0, B: 128}
+	Navy        = Color{Type: ColorTrue, R: 0, G: 0, B: 128}
+	Teal        = Color{Type: ColorTrue, R: 0, G: 128, B: 128}
+	Gray        = Color{Type: ColorTrue, R: 128, G: 128, B: 128}
+	Silver      = Color{Type: ColorTrue, R: 192, G: 192, B: 192}
+	Transparent = Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+)
+
+// Hex parses a hex color string (#RGB, #RRGGBB, #RRGGBBAA) and returns the Color.
+// Returns Black if the string cannot be parsed.
+func Hex(s string) Color {
+	c, ok := ParseColor(s)
+	if !ok {
+		return Black
+	}
+	return c
+}
+
 // ParseColor parses a CSS color string and returns the corresponding Color.
 // Supported formats:
 //   - Named colors: "red", "blue", etc.
-//   - Hexadecimal: "#RGB", "#RRGGBB"
+//   - Hexadecimal: "#RGB", "#RRGGBB", "#RRGGBBAA"
 //   - RGB: "rgb(r, g, b)"
+//   - RGBA: "rgba(r, g, b, a)"
 //   - ANSI: "ansi(0)" through "ansi(15)"
 //   - 256: "color(0)" through "color(255)"
 //   - Transparent: "transparent"
@@ -184,6 +216,11 @@ func ParseColor(s string) (Color, bool) {
 	// rgb() function
 	if strings.HasPrefix(strings.ToLower(s), "rgb(") {
 		return parseRGB(s)
+	}
+
+	// rgba() function
+	if strings.HasPrefix(strings.ToLower(s), "rgba(") {
+		return parseRGBA(s)
 	}
 
 	// ansi() function
@@ -225,6 +262,17 @@ func parseHex(s string) (Color, bool) {
 		}
 		return NewTrue(uint8(r), uint8(g), uint8(b)), true
 
+	case 8:
+		// #RRGGBBAA
+		r, err1 := strconv.ParseUint(s[0:2], 16, 8)
+		g, err2 := strconv.ParseUint(s[2:4], 16, 8)
+		b, err3 := strconv.ParseUint(s[4:6], 16, 8)
+		_, err4 := strconv.ParseUint(s[6:8], 16, 8) // alpha is parsed but we don't store it
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+			return Color{}, false
+		}
+		return NewTrue(uint8(r), uint8(g), uint8(b)), true
+
 	default:
 		return Color{}, false
 	}
@@ -242,6 +290,31 @@ func parseRGB(s string) (Color, bool) {
 	g, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
 	b, err3 := strconv.Atoi(strings.TrimSpace(parts[2]))
 	if err1 != nil || err2 != nil || err3 != nil {
+		return Color{}, false
+	}
+
+	if r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255 {
+		return Color{}, false
+	}
+
+	return NewTrue(uint8(r), uint8(g), uint8(b)), true
+}
+
+// parseRGBA parses an rgba(r, g, b, a) color string.
+// The alpha value is parsed but currently not stored (Color has no alpha field).
+func parseRGBA(s string) (Color, bool) {
+	// rgba(r, g, b, a)
+	inner := strings.TrimSpace(s[5 : len(s)-1])
+	parts := strings.Split(inner, ",")
+	if len(parts) != 4 {
+		return Color{}, false
+	}
+
+	r, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	g, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	b, err3 := strconv.Atoi(strings.TrimSpace(parts[2]))
+	_, err4 := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64) // alpha parsed but not stored
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 		return Color{}, false
 	}
 
