@@ -2022,15 +2022,10 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 	if node.HasClass("animate-spin") {
 		spinners := []string{"|", "/", "-", "\\"}
 		ch := spinners[a.animFrame%len(spinners)]
+		// Set text content to spinner character
 		for _, child := range node.Children {
 			if child.Type == dom.NodeText {
-				if len(child.Data) > 0 {
-					runes := []rune(child.Data)
-					runes[len(runes)-1] = []rune(ch)[0]
-					child.Data = string(runes)
-				} else {
-					child.Data = ch
-				}
+				child.Data = " " + ch
 				break
 			}
 		}
