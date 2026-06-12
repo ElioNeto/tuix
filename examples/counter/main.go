@@ -33,7 +33,7 @@ func main() {
 		#app {
 			padding: 1;
 			background-color: #1a1a2e;
-			color: #e0e0e0;
+			color: #c91c9eff;
 			width: 100%;
 		}
 
