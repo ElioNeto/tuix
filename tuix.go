@@ -292,9 +292,6 @@ const designSystemCSS = `
 .table-row {
 	padding: 0 1;
 }
-.table-row:nth-child(even) {
-	background-color: #16213e;
-}
 
 /* Grid */
 .grid-2 { display: flex; gap: 1; }
@@ -1674,7 +1671,11 @@ func (a *App) cleanFormState(node *dom.Node) {
 // prepareFormDOM updates DOM children for form elements to reflect current state.
 // This is called before each layout pass so that layout sees the correct content.
 func (a *App) prepareFormDOM(node *dom.Node) {
-	if node == nil || node.Type != dom.NodeElement {
+	if node == nil {
+		return
+	}
+	// Process the node if it's an element (skip raw text nodes in the top-level call)
+	if node.Type == dom.NodeText {
 		return
 	}
 
