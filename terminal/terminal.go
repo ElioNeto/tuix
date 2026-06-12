@@ -25,6 +25,7 @@ type Terminal struct {
 	closed    bool
 	wg        sync.WaitGroup
 	colorMode int // 0=16, 1=256, 2=truecolor
+	imageMode int // 0=none, 1=kitty, 2=sixel
 }
 
 // State holds the terminal configuration for restoring later.
@@ -153,6 +154,7 @@ func Open() (*Terminal, error) {
 		done:      make(chan struct{}),
 		resize:    make(chan struct{}, 1),
 		colorMode: detectColorMode(),
+		imageMode: detectImageProtocol(),
 	}
 
 	// Save current terminal state
@@ -671,4 +673,38 @@ func detectColorMode() int {
 	}
 
 	return 0
+}
+
+// detectImageProtocol detects the terminal's image protocol support.
+// 0 = none, 1 = Kitty, 2 = Sixel
+func detectImageProtocol() int {
+	term := os.Getenv("TERM")
+	switch term {
+	case "xterm-kitty":
+		return 1 // Kitty protocol
+	case "sixel", "xterm-sixel":
+		return 2 // Sixel protocol
+	}
+
+	// Check for Sixel via COLORTERM or other env vars
+	if os.Getenv("SIXEL_SUPPORT") == "1" {
+		return 2
+	}
+
+	// TODO: Query terminal directly via escape sequences for more accurate detection
+	// For Kitty: \x1b_Gi=31,s=1,v=1 (expects \x1b_Gi=31;OK\x1b\\ response)
+	// For Sixel: DECRPM (request terminal mode 80)
+
+	return 0
+}
+
+// ImageMode returns the detected image protocol support:
+// 0 = none, 1 = Kitty, 2 = Sixel
+func (t *Terminal) ImageMode() int {
+	return t.imageMode
+}
+
+// SupportsImages returns true if the terminal supports any image protocol.
+func (t *Terminal) SupportsImages() bool {
+	return t.imageMode != 0
 }

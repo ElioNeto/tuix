@@ -14,6 +14,10 @@ package tuix
 
 import (
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1330,6 +1334,11 @@ func (a *App) renderFrame() {
 	// Full render (pass nil to always output everything)
 	output := a.canvas.Render(nil)
 	a.terminal.WriteString(output)
+
+	// Render images using Kitty/Sixel protocol if supported
+	if a.terminal.SupportsImages() && a.rootBox != nil {
+		a.renderImages(a.rootBox)
+	}
 }
 
 // rebuildStylesheet re-parses the combined CSS (toast + design system + theme + user).
@@ -1394,6 +1403,66 @@ func (a *App) paintTooltip() {
 		if tipX+1+i < tipX+tipW {
 			a.canvas.Set(tipX+1+i, tipY, r, fg, bg)
 		}
+	}
+}
+
+// renderImages walks the box tree and renders <img> elements using the
+// terminal's image protocol (Kitty or Sixel).
+func (a *App) renderImages(box *layout.Box) {
+	if box == nil {
+		return
+	}
+
+	// Check if this box is an <img> element
+	if box.Node != nil && strings.ToLower(box.Node.Data) == "img" {
+		src := box.Node.GetAttribute("src")
+		if src == "" {
+			return
+		}
+
+		// Determine image dimensions
+		width := box.ContentRect.Width
+		height := box.ContentRect.Height
+		if width <= 0 || height <= 0 {
+			// Default size: 20x10 cells
+			width = 20
+			height = 10
+		}
+
+		// Load image from file
+		imgFile, err := os.Open(src)
+		if err != nil {
+			return
+		}
+		defer imgFile.Close()
+
+		img, _, err := image.Decode(imgFile)
+		if err != nil {
+			return
+		}
+
+		// Render using the appropriate protocol
+		imgWidth := width
+		imgHeight := height
+		// Position at the content area of the box
+		posX := box.ContentRect.X
+		posY := box.ContentRect.Y
+
+		switch a.terminal.ImageMode() {
+		case 1: // Kitty protocol
+			// Position cursor to the image location
+			fmt.Fprintf(a.terminal, "\x1b[%d;%dH", posY+1, posX+1)
+			render.EncodeKitty(a.terminal, img, imgWidth, imgHeight)
+		case 2: // Sixel protocol
+			// Position cursor to the image location
+			fmt.Fprintf(a.terminal, "\x1b[%d;%dH", posY+1, posX+1)
+			render.EncodeSixel(a.terminal, img)
+		}
+	}
+
+	// Recurse into children
+	for _, child := range box.Children {
+		a.renderImages(child)
 	}
 }
 
