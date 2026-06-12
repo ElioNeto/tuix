@@ -322,7 +322,11 @@ func (a *App) resolveNodeStyles(node *dom.Node, resolver *style.Resolver,
 	if node == nil {
 		return
 	}
-	styles[node] = resolver.Resolve(node)
+
+	// Resolve this node, inheriting from parent if available
+	parentStyle := styles[node.Parent]
+	styles[node] = resolver.ResolveWithParent(node, parentStyle)
+
 	for _, child := range node.Children {
 		a.resolveNodeStyles(child, resolver, styles)
 	}

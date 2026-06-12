@@ -203,15 +203,27 @@ func NewResolver(sheet *css.Stylesheet) *Resolver {
 	return &Resolver{stylesheet: sheet}
 }
 
-// Resolve computes the style for a DOM node.
-// For now, it uses a simplified approach: only matches selectors at the
-// element level and applies property values directly.
+// Resolve computes the style for a DOM node, optionally inheriting from a parent style.
 func (r *Resolver) Resolve(node *dom.Node) ComputedStyle {
-	style := DefaultStyle()
+	return r.ResolveWithParent(node, ComputedStyle{})
+}
+
+// ResolveWithParent computes the style, inheriting from the given parent style.
+func (r *Resolver) ResolveWithParent(node *dom.Node, parent ComputedStyle) ComputedStyle {
+	var style ComputedStyle
 
 	if node.Type != dom.NodeElement {
+		// Non-element nodes (text) inherit from parent
+		style = parent
+		// Ensure DisplayNone from parent is not inherited
+		if style.Display == DisplayNone {
+			style = DefaultStyle()
+		}
 		return style
 	}
+
+	// Start from default and apply matched rules
+	style = DefaultStyle()
 
 	// Collect matching rules
 	type match struct {
@@ -253,6 +265,9 @@ func (r *Resolver) Resolve(node *dom.Node) ComputedStyle {
 			applyDeclaration(&style, decl)
 		}
 	}
+
+	// CSS inheritance: inherit inherited properties from parent
+	inheritStyle(&style, parent)
 
 	return style
 }
@@ -905,4 +920,33 @@ func clampF(v, min, max float64) float64 {
 		return max
 	}
 	return v
+}
+
+// inheritStyle applies CSS inheritance: for inherited properties that were not
+// explicitly set on the child, copy the parent's value.
+// CSS inherited properties: color, font-weight, font-size, text-align,
+// visibility, cursor, white-space, line-height, opacity (partial).
+func inheritStyle(child *ComputedStyle, parent ComputedStyle) {
+	if !child.Color.Defined {
+		child.Color = parent.Color
+	}
+	if child.FontWeight == 400 && parent.FontWeight != 400 {
+		child.FontWeight = parent.FontWeight
+	}
+	if child.FontSize.Unit == LengthPx && child.FontSize.Value == 16 &&
+		parent.FontSize.Unit != LengthPx || parent.FontSize.Value != 16 {
+		child.FontSize = parent.FontSize
+	}
+	if child.TextAlign == TextAlignLeft && parent.TextAlign != TextAlignLeft {
+		child.TextAlign = parent.TextAlign
+	}
+	if child.Visibility == VisibilityVisible && parent.Visibility != VisibilityVisible {
+		child.Visibility = parent.Visibility
+	}
+	if child.Cursor == CursorAuto && parent.Cursor != CursorAuto {
+		child.Cursor = parent.Cursor
+	}
+	if child.WhiteSpace == WhiteSpaceNormal && parent.WhiteSpace != WhiteSpaceNormal {
+		child.WhiteSpace = parent.WhiteSpace
+	}
 }
