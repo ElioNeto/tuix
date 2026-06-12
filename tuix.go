@@ -88,6 +88,135 @@ const toastDefaultCSS = `
 .toast-error   { border-left: 2; border-left-color: #e74c3c; }
 `
 
+// designSystemCSS provides pre-built component classes for a consistent UI.
+// These use placeholder hex values that get overridden by themeToCSS.
+// The themeToCSS() output is applied on top so the actual theme colors win.
+const designSystemCSS = `
+/* Button variants */
+.btn {
+	padding: 0 2;
+	border: solid;
+	cursor: pointer;
+	text-align: center;
+}
+.btn-primary {
+	background-color: #00d4aa;
+	color: #1a1a2e;
+	font-weight: bold;
+}
+.btn-secondary {
+	border-color: #e94560;
+	color: #e94560;
+}
+.btn-danger {
+	border-color: #e74c3c;
+	color: #e74c3c;
+}
+.btn-ghost {
+	border: none;
+	background: transparent;
+}
+.btn-sm { padding: 0 1; }
+.btn-lg { padding: 0 4; }
+
+/* Input variants */
+.input {
+	padding: 0 1;
+	border: solid;
+}
+.input-error {
+	border-color: #e74c3c;
+}
+.input-sm { padding: 0 1; }
+.input-lg { padding: 0 3; }
+
+/* Card component */
+.card {
+	border: solid #0f3460;
+	background-color: #16213e;
+	padding: 1;
+}
+
+/* Badge / Tag */
+.badge {
+	padding: 0 1;
+	border: solid;
+	font-weight: bold;
+}
+.badge-primary {
+	background-color: #00d4aa;
+	color: #1a1a2e;
+}
+.badge-success {
+	background-color: #2ecc71;
+	color: #1a1a2e;
+}
+.badge-warning {
+	background-color: #f39c12;
+	color: #1a1a2e;
+}
+.badge-error {
+	background-color: #e74c3c;
+	color: #1a1a2e;
+}
+
+/* Layout utilities */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-1 { gap: 1; }
+.gap-2 { gap: 2; }
+.gap-4 { gap: 4; }
+.w-full { width: 100%; }
+.text-center { text-align: center; }
+.text-bold { font-weight: bold; }
+`
+
+// themeToCSS generates CSS rules from a Theme.
+func themeToCSS(t Theme) string {
+	return fmt.Sprintf(`
+/* Theme colors */
+.bg-primary    { background-color: %s; }
+.bg-secondary  { background-color: %s; }
+.bg-accent     { background-color: %s; }
+.bg-success    { background-color: %s; }
+.bg-warning    { background-color: %s; }
+.bg-error      { background-color: %s; }
+.bg-surface    { background-color: %s; }
+.bg-background { background-color: %s; }
+.text-primary    { color: %s; }
+.text-secondary  { color: %s; }
+.text-accent     { color: %s; }
+.text-success    { color: %s; }
+.text-warning    { color: %s; }
+.text-error      { color: %s; }
+.text-muted      { color: %s; }
+.border-primary    { border-color: %s; }
+.border-secondary  { border-color: %s; }
+.border-accent     { border-color: %s; }
+.border-success    { border-color: %s; }
+.border-warning    { border-color: %s; }
+.border-error      { border-color: %s; }
+`,
+		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
+		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
+		colorToHex(t.Surface), colorToHex(t.Background),
+		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
+		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
+		colorToHex(t.Muted),
+		colorToHex(t.Primary), colorToHex(t.Secondary), colorToHex(t.Accent),
+		colorToHex(t.Success), colorToHex(t.Warning), colorToHex(t.Error),
+	)
+}
+
+// colorToHex returns the hex string representation of a color (e.g. "#ff6600").
+func colorToHex(c color.Color) string {
+	return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
+}
+
 var (
 	// Tags that are focusable form elements
 	focusableTags = map[string]bool{
@@ -98,6 +227,55 @@ var (
 		"a":        true,
 	}
 )
+
+// Theme defines semantic colors for a design system.
+// Each slot maps to a specific visual role in the UI.
+type Theme struct {
+	Primary   color.Color
+	Secondary color.Color
+	Accent    color.Color
+	Success   color.Color
+	Warning   color.Color
+	Error     color.Color
+	Surface   color.Color
+	Background color.Color
+	Text      color.Color
+	Muted     color.Color
+	Border    color.Color
+	Focus     color.Color
+}
+
+// DefaultDarkTheme is the built-in dark color scheme.
+var DefaultDarkTheme = Theme{
+	Primary:    color.Color{Type: color.ColorTrue, R: 0x00, G: 0xD4, B: 0xAA},
+	Secondary:  color.Color{Type: color.ColorTrue, R: 0x0F, G: 0x34, B: 0x60},
+	Accent:     color.Color{Type: color.ColorTrue, R: 0xE9, G: 0x45, B: 0x60},
+	Success:    color.Color{Type: color.ColorTrue, R: 0x2E, G: 0xCC, B: 0x71},
+	Warning:    color.Color{Type: color.ColorTrue, R: 0xF3, G: 0x9C, B: 0x12},
+	Error:      color.Color{Type: color.ColorTrue, R: 0xE7, G: 0x4C, B: 0x3C},
+	Surface:    color.Color{Type: color.ColorTrue, R: 0x16, G: 0x21, B: 0x3E},
+	Background: color.Color{Type: color.ColorTrue, R: 0x1A, G: 0x1A, B: 0x2E},
+	Text:       color.Color{Type: color.ColorTrue, R: 0xC0, G: 0xC0, B: 0xC0},
+	Muted:      color.Color{Type: color.ColorTrue, R: 0x55, G: 0x55, B: 0x55},
+	Border:     color.Color{Type: color.ColorTrue, R: 0x0F, G: 0x34, B: 0x60},
+	Focus:      color.Color{Type: color.ColorTrue, R: 0x00, G: 0xD4, B: 0xAA},
+}
+
+// DefaultLightTheme is the built-in light color scheme.
+var DefaultLightTheme = Theme{
+	Primary:    color.Color{Type: color.ColorTrue, R: 0x00, G: 0x7B, B: 0xFF},
+	Secondary:  color.Color{Type: color.ColorTrue, R: 0x6C, G: 0x75, B: 0x7D},
+	Accent:     color.Color{Type: color.ColorTrue, R: 0xE9, G: 0x45, B: 0x60},
+	Success:    color.Color{Type: color.ColorTrue, R: 0x2E, G: 0xCC, B: 0x71},
+	Warning:    color.Color{Type: color.ColorTrue, R: 0xF3, G: 0x9C, B: 0x12},
+	Error:      color.Color{Type: color.ColorTrue, R: 0xE7, G: 0x4C, B: 0x3C},
+	Surface:    color.Color{Type: color.ColorTrue, R: 0xFF, G: 0xFF, B: 0xFF},
+	Background: color.Color{Type: color.ColorTrue, R: 0xF5, G: 0xF5, B: 0xF5},
+	Text:       color.Color{Type: color.ColorTrue, R: 0x33, G: 0x33, B: 0x33},
+	Muted:      color.Color{Type: color.ColorTrue, R: 0x99, G: 0x99, B: 0x99},
+	Border:     color.Color{Type: color.ColorTrue, R: 0xDD, G: 0xDD, B: 0xDD},
+	Focus:      color.Color{Type: color.ColorTrue, R: 0x00, G: 0x7B, B: 0xFF},
+}
 
 // App is the main application type. Create one with New().
 type App struct {
@@ -180,6 +358,11 @@ type App struct {
 	tooltipNode        *dom.Node    // Node whose tooltip is currently shown
 	tooltipText        string       // Text to display in tooltip
 	tooltipX, tooltipY int          // Position to render tooltip (near cursor)
+
+	// Design system / theme
+	theme            Theme
+	useDesignSystem  bool
+	themeCSS         string // Generated CSS from the active theme
 }
 
 // New creates a new tuix application.
@@ -200,7 +383,21 @@ func (a *App) SetHTML(html string) {
 // SetCSS sets the CSS stylesheet for the application.
 func (a *App) SetCSS(cssContent string) {
 	a.css = cssContent
-	a.stylesResolved = false
+}
+
+// SetTheme sets the active color theme and regenerates theme CSS rules.
+func (a *App) SetTheme(t Theme) {
+	a.theme = t
+	a.themeCSS = themeToCSS(t)
+}
+
+// UseDesignSystem enables the built-in design system CSS with component classes.
+// Call SetTheme() before this to apply a custom theme.
+func (a *App) UseDesignSystem() {
+	a.useDesignSystem = true
+	if a.themeCSS == "" {
+		a.SetTheme(DefaultDarkTheme)
+	}
 }
 
 // OnInit registers a callback called once when the app starts.
@@ -525,6 +722,12 @@ func (a *App) Run() error {
 
 	// Parse CSS — toast defaults go first so user CSS can override
 	combinedCSS := toastDefaultCSS
+	if a.useDesignSystem {
+		combinedCSS = designSystemCSS + "\n" + combinedCSS
+	}
+	if a.themeCSS != "" {
+		combinedCSS = a.themeCSS + "\n" + combinedCSS
+	}
 	if a.css != "" {
 		combinedCSS += "\n" + a.css
 	}
