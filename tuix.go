@@ -14,6 +14,7 @@ package tuix
 
 import (
 	"strings"
+	"time"
 
 	"github.com/elioneto/tuix/css"
 	"github.com/elioneto/tuix/dom"
@@ -22,6 +23,68 @@ import (
 	"github.com/elioneto/tuix/style"
 	"github.com/elioneto/tuix/terminal"
 )
+
+// ToastType represents the type of a toast notification.
+type ToastType int
+
+const (
+	ToastInfo    ToastType = iota // Informational toast (blue)
+	ToastSuccess                  // Success toast (green)
+	ToastWarning                  // Warning toast (yellow)
+	ToastError                    // Error toast (red)
+)
+
+// ToastEntry represents a single toast notification in the queue.
+type ToastEntry struct {
+	ID       int        // Unique toast identifier
+	Message  string     // Toast message text
+	Type     ToastType  // Toast type (info/success/warning/error)
+	Duration time.Duration // Auto-dismiss duration (0 = manual dismiss only)
+	Position string     // Position hint: "top-right", "bottom-right", "top-left", "bottom-left"
+}
+
+// toastEntry is the internal mutable state for a toast.
+type toastEntry struct {
+	ToastEntry
+}
+
+// toastDefaultCSS provides default styling for toast notifications.
+// Users can override any of these in their own CSS.
+const toastDefaultCSS = `
+.toast-container {
+	position: fixed;
+	z-index: 200;
+	display: flex;
+	flex-direction: column;
+	gap: 1;
+	pointer-events: none;
+}
+.toast-container-top-right {
+	top: 1; right: 1;
+}
+.toast-container-top-left {
+	top: 1; left: 1;
+}
+.toast-container-bottom-right {
+	bottom: 1; right: 1;
+}
+.toast-container-bottom-left {
+	bottom: 1; left: 1;
+}
+.toast {
+	padding: 1 2;
+	border: 1;
+	min-width: 20;
+	max-width: 40;
+	background: #1a1a2e;
+	color: #e0e0e0;
+	border-color: #333;
+}
+.toast-info    { border-left: 2; border-left-color: #3498db; }
+.toast-success { border-left: 2; border-left-color: #2ecc71; }
+.toast-warning { border-left: 2; border-left-color: #f39c12; }
+.toast-error   { border-left: 2; border-left-color: #e74c3c; }
+`
 
 var (
 	// Tags that are focusable form elements
@@ -93,12 +156,22 @@ type App struct {
 	modalActive bool       // Whether the modal is currently shown
 	onModalOpen func()     // Called when modal opens
 	onModalClose func()    // Called when modal closes
+
+	// Toast state
+	toasts               []*toastEntry // Active toast notifications
+	toastIDCounter       int
+	toastTimerChan       chan int       // Channel receiving expired toast IDs
+	onToast              func(*ToastEntry) // Called when a new toast appears
+
+	// Alert/Confirm state
+	pendingAlertCallback func(bool) // Callback for alert/confirm dialog results
 }
 
 // New creates a new tuix application.
 func New() *App {
 	return &App{
-		layout: layout.NewEngine(),
+		layout:         layout.NewEngine(),
+		toastTimerChan: make(chan int, 64),
 	}
 }
 
@@ -231,6 +304,9 @@ func (a *App) ShowModal(html string) {
 func (a *App) CloseModal() {
 	a.modalActive = false
 
+	// Clear any pending alert callback
+	a.pendingAlertCallback = nil
+
 	// Clean up form state for modal elements
 	if a.modalNode != nil {
 		a.cleanFormState(a.modalNode)
@@ -273,6 +349,136 @@ func (a *App) OnModalClose(fn func()) {
 	a.onModalClose = fn
 }
 
+// --- Toast / Notification API ---
+
+// ShowToast displays a toast notification. The toast auto-dismisses after the
+// specified duration. Use ToastEntry fields to customize the message, type,
+// duration, and position.
+func (a *App) ShowToast(entry ToastEntry) {
+	if entry.Duration == 0 {
+		entry.Duration = 4 * time.Second
+	}
+	if entry.Position == "" {
+		entry.Position = "top-right"
+	}
+
+	a.toastIDCounter++
+	entry.ID = a.toastIDCounter
+
+	e := &toastEntry{ToastEntry: entry}
+	a.toasts = append(a.toasts, e)
+
+	// Schedule auto-dismiss
+	go func(id int, d time.Duration) {
+		time.Sleep(d)
+		select {
+		case a.toastTimerChan <- id:
+		default:
+			// Channel full or receiver gone — drop
+		}
+	}(entry.ID, entry.Duration)
+
+	if a.onToast != nil {
+		a.onToast(&e.ToastEntry)
+	}
+
+	a.renderFrame()
+}
+
+// DismissToast manually dismisses a specific toast by ID.
+func (a *App) DismissToast(id int) {
+	a.dismissToast(id)
+}
+
+// dismissToast removes a toast from the queue and re-renders.
+func (a *App) dismissToast(id int) {
+	for i, t := range a.toasts {
+		if t.ID == id {
+			a.toasts = append(a.toasts[:i], a.toasts[i+1:]...)
+			break
+		}
+	}
+	a.renderFrame()
+}
+
+// OnToast registers a callback called when a new toast is shown.
+func (a *App) OnToast(fn func(entry *ToastEntry)) {
+	a.onToast = fn
+}
+
+// Alert shows a modal dialog with a message and OK button.
+// The modal is dismissed when the user presses Enter or clicks OK.
+func (a *App) Alert(title, message string) {
+	a.alertConfirm(title, message, nil)
+}
+
+// Confirm shows a modal dialog with a message and OK/Cancel buttons.
+// The callback is invoked with true if OK was pressed, false if Cancel.
+func (a *App) Confirm(title, message string, cb func(ok bool)) {
+	a.alertConfirm(title, message, cb)
+}
+
+func (a *App) alertConfirm(title, message string, cb func(ok bool)) {
+	hasCancel := cb != nil
+	buttons := `<button id="alert-ok" autofocus>OK</button>`
+	if hasCancel {
+		buttons = `<button id="alert-ok" autofocus>OK</button> <button id="alert-cancel">Cancel</button>`
+	}
+
+	html := `<div class="dialog alert-dialog">
+		<h2>` + title + `</h2>
+		<p>` + message + `</p>
+		<div class="actions">` + buttons + `</div>
+	</div>`
+
+	a.pendingAlertCallback = cb
+	a.ShowModal(html)
+}
+
+// buildToastHTML generates the HTML for the toast container and its children.
+func (a *App) buildToastHTML() string {
+	if len(a.toasts) == 0 {
+		return `<div class="toast-container"></div>`
+	}
+
+	var items string
+	for _, t := range a.toasts {
+		typeClass := "toast-info"
+		switch t.Type {
+		case ToastSuccess:
+			typeClass = "toast-success"
+		case ToastWarning:
+			typeClass = "toast-warning"
+		case ToastError:
+			typeClass = "toast-error"
+		}
+
+		items += `<div class="toast ` + typeClass + `" data-toast-id="` + itoa(t.ID) + `">`
+		items += `<span class="toast-msg">` + t.Message + `</span>`
+		items += `</div>`
+	}
+
+	pos := "top-right"
+	if len(a.toasts) > 0 {
+		pos = a.toasts[0].Position
+	}
+
+	return `<div class="toast-container toast-container-` + pos + `">` + items + `</div>`
+}
+
+// itoa is a simple int-to-string for building HTML attributes.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	s := ""
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	return s
+}
+
 // Run starts the application's main loop.
 // It opens the terminal in raw mode, parses HTML/CSS, and enters the event loop.
 func (a *App) Run() error {
@@ -301,14 +507,14 @@ func (a *App) Run() error {
 		a.document = dom.Document()
 	}
 
-	// Parse CSS
+	// Parse CSS — toast defaults go first so user CSS can override
+	combinedCSS := toastDefaultCSS
 	if a.css != "" {
-		cssParser := css.NewParser(a.css)
-		sheet, _ := cssParser.Parse()
-		a.stylesheet = sheet
-	} else {
-		a.stylesheet = &css.Stylesheet{}
+		combinedCSS += "\n" + a.css
 	}
+	cssParser := css.NewParser(combinedCSS)
+	sheet, _ := cssParser.Parse()
+	a.stylesheet = sheet
 
 	// Initialize form state by scanning the DOM
 	a.initFormState(a.document)
@@ -336,6 +542,8 @@ func (a *App) Run() error {
 				return nil
 			}
 			a.handleEvent(event)
+		case toastID := <-a.toastTimerChan:
+			a.dismissToast(toastID)
 		}
 	}
 
@@ -424,7 +632,13 @@ func (a *App) handleEvent(event terminal.Event) {
 
 		// Handle Escape — close modal if active
 		if event.Key == terminal.KeyEscape && a.modalActive {
+			// Save callback before CloseModal clears it
+			cb := a.pendingAlertCallback
 			a.CloseModal()
+			// If this was a confirm dialog, invoke callback with false (cancel)
+			if cb != nil {
+				cb(false)
+			}
 			return
 		}
 
@@ -636,13 +850,28 @@ func (a *App) renderFrame() {
 	// Graft modal node into the document if active
 	var modalParent *dom.Node
 	if a.modalActive && a.modalNode != nil {
-		// Attach modal as a child of the document
-		// Find the first suitable parent (document itself or first element child)
 		for _, child := range a.document.Children {
 			if child.Type == dom.NodeElement {
 				child.Children = append(child.Children, a.modalNode)
 				a.modalNode.Parent = child
 				modalParent = child
+				break
+			}
+		}
+	}
+
+	// Graft toast container into the document if there are active toasts
+	var toastParent *dom.Node
+	var toastContainer *dom.Node
+	if len(a.toasts) > 0 {
+		toastHTML := a.buildToastHTML()
+		parser := dom.NewParser(toastHTML)
+		toastContainer = parser.Parse()
+		for _, child := range a.document.Children {
+			if child.Type == dom.NodeElement {
+				child.Children = append(child.Children, toastContainer)
+				toastContainer.Parent = child
+				toastParent = child
 				break
 			}
 		}
@@ -674,6 +903,12 @@ func (a *App) renderFrame() {
 	if modalParent != nil {
 		modalParent.Children = removeFromSlice(modalParent.Children, a.modalNode)
 		a.modalNode.Parent = nil
+	}
+
+	// Detach toast container if it was attached
+	if toastParent != nil && toastContainer != nil {
+		toastParent.Children = removeFromSlice(toastParent.Children, toastContainer)
+		toastContainer.Parent = nil
 	}
 
 	// Call render callback
@@ -1110,7 +1345,28 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 
 	case "button":
 		if event.Key == terminal.KeyEnter || event.Key == terminal.KeySpace {
-			// Button activation — for now, just visual feedback
+			// Check for alert/confirm dialog buttons
+			id := focused.GetAttribute("id")
+			if id == "alert-ok" {
+				if a.pendingAlertCallback != nil {
+					cb := a.pendingAlertCallback
+					a.pendingAlertCallback = nil
+					a.CloseModal()
+					cb(true)
+				} else {
+					// Alert without callback — just close
+					a.CloseModal()
+				}
+				return true
+			}
+			if id == "alert-cancel" && a.pendingAlertCallback != nil {
+				cb := a.pendingAlertCallback
+				a.pendingAlertCallback = nil
+				a.CloseModal()
+				cb(false)
+				return true
+			}
+			// General button activation
 			a.renderFrame()
 			return true
 		}
