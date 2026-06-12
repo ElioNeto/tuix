@@ -780,8 +780,8 @@ func (p *Parser) parseHashColor() (Value, bool) {
 		p.pos++
 	}
 	hex := p.input[start:p.pos]
-	if len(hex) != 3 && len(hex) != 6 {
-		// Not a valid hex color, treat as unknown
+	if len(hex) != 3 && len(hex) != 6 && len(hex) != 8 {
+		// Not a valid hex color
 		p.pos = start
 		return Value{}, false
 	}
@@ -794,7 +794,7 @@ func (p *Parser) parseHashColor() (Value, bool) {
 
 // parseHexToColor converts a hex color string (without #) to a Color struct.
 func parseHexToColor(hex string) Color {
-	c := Color{Type: ColorHex, Hex: "#" + hex}
+	c := Color{Type: ColorHex, Hex: "#" + hex, A: 1.0}
 	switch len(hex) {
 	case 3:
 		c.R = hexPair(hex[0:1] + hex[0:1])
@@ -804,6 +804,11 @@ func parseHexToColor(hex string) Color {
 		c.R = hexPair(hex[0:2])
 		c.G = hexPair(hex[2:4])
 		c.B = hexPair(hex[4:6])
+	case 8:
+		c.R = hexPair(hex[0:2])
+		c.G = hexPair(hex[2:4])
+		c.B = hexPair(hex[4:6])
+		c.A = float64(hexPair(hex[6:8])) / 255.0
 	}
 	return c
 }

@@ -105,6 +105,12 @@ func SetCursor(x, y int) string {
 func (c *Canvas) Render(old *Canvas) string {
 	var buf strings.Builder
 
+	// If old canvas has different dimensions, or this is the first render,
+	// clear the entire screen first to remove leftover content.
+	if old == nil || old.Width != c.Width || old.Height != c.Height {
+		buf.WriteString("\x1b[2J") // Clear entire screen
+	}
+
 	// Move to home position
 	buf.WriteString("\x1b[H")
 
