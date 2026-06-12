@@ -1339,13 +1339,14 @@ func (a *App) renderFrame() {
 }
 
 // rebuildStylesheet re-parses the combined CSS (toast + design system + theme + user).
+// Order (highest priority last): toast, design system, theme, user CSS
 func (a *App) rebuildStylesheet() {
 	combinedCSS := toastDefaultCSS
 	if a.useDesignSystem {
-		combinedCSS = designSystemCSS + "\n" + combinedCSS
+		combinedCSS += "\n" + designSystemCSS
 	}
 	if a.themeCSS != "" {
-		combinedCSS = a.themeCSS + "\n" + combinedCSS
+		combinedCSS += "\n" + a.themeCSS
 	}
 	if a.css != "" {
 		combinedCSS += "\n" + a.css
@@ -1524,7 +1525,10 @@ func (a *App) resolveNodeStyles(node *dom.Node, resolver *style.Resolver,
 
 // initFormState scans the DOM tree and initializes form control state.
 func (a *App) initFormState(node *dom.Node) {
-	if node == nil || node.Type != dom.NodeElement {
+	if node == nil {
+		return
+	}
+	if node.Type == dom.NodeText {
 		return
 	}
 
@@ -1532,6 +1536,14 @@ func (a *App) initFormState(node *dom.Node) {
 		a.formValues = make(map[*dom.Node]string)
 		a.formCursors = make(map[*dom.Node]int)
 		a.formChecked = make(map[*dom.Node]bool)
+	}
+
+	if node.Type != dom.NodeElement {
+		// Recurse into children (e.g., document node)
+		for _, child := range node.Children {
+			a.initFormState(child)
+		}
+		return
 	}
 
 	tag := strings.ToLower(node.Data)
