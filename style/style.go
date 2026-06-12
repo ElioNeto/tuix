@@ -529,6 +529,10 @@ func matchesSelector(node *dom.Node, sel css.Selector) bool {
 			return node.HasAttribute("required")
 		case "optional":
 			return !node.HasAttribute("required")
+		case "read-only":
+			return node.HasAttribute("readonly")
+		case "read-write":
+			return !node.HasAttribute("readonly")
 		default:
 			return false
 		}

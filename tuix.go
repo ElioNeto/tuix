@@ -1414,6 +1414,37 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 // handleTextEdit processes keyboard input for text fields.
 // Returns true if the event was consumed.
 func (a *App) handleTextEdit(event terminal.Event, node *dom.Node) bool {
+	// If readonly, don't allow editing but still allow cursor navigation
+	if node.HasAttribute("readonly") {
+		switch event.Key {
+		case terminal.KeyLeft:
+			if cursor := a.formCursors[node]; cursor > 0 {
+				a.formCursors[node] = cursor - 1
+				a.renderFrame()
+			}
+			return true
+		case terminal.KeyRight:
+			cursor := a.formCursors[node]
+			val := []rune(a.formValues[node])
+			if cursor < len(val) {
+				a.formCursors[node] = cursor + 1
+				a.renderFrame()
+			}
+			return true
+		case terminal.KeyHome:
+			a.formCursors[node] = 0
+			a.renderFrame()
+			return true
+		case terminal.KeyEnd:
+			a.formCursors[node] = len([]rune(a.formValues[node]))
+			a.renderFrame()
+			return true
+		default:
+			// All other keys are consumed but ignored in readonly mode
+			return true
+		}
+	}
+
 	val := []rune(a.formValues[node])
 	cursor := a.formCursors[node]
 	if cursor < 0 {
