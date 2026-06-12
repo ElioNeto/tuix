@@ -174,6 +174,22 @@ const designSystemCSS = `
 .text-center { text-align: center; }
 .text-bold { font-weight: bold; }
 
+/* Spacing utilities */
+.p-1  { padding: 1; }
+.p-2  { padding: 2; }
+.p-4  { padding: 4; }
+.px-1 { padding-left: 1; padding-right: 1; }
+.px-2 { padding-left: 2; padding-right: 2; }
+.py-1 { padding-top: 1; padding-bottom: 1; }
+.py-2 { padding-top: 2; padding-bottom: 2; }
+.m-1  { margin: 1; }
+.m-2  { margin: 2; }
+.m-4  { margin: 4; }
+.mx-1 { margin-left: 1; margin-right: 1; }
+.mx-2 { margin-left: 2; margin-right: 2; }
+.my-1 { margin-top: 1; margin-bottom: 1; }
+.my-2 { margin-top: 2; margin-bottom: 2; }
+
 /* Navbar */
 .navbar {
 	display: flex;

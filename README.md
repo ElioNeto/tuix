@@ -714,6 +714,12 @@ Theme colors are applied as CSS utility classes — `.bg-primary`, `.text-muted`
 | `.text-center` | `text-align: center` |
 | `.text-bold` | `font-weight: bold` |
 | `.grid-2` / `.grid-3` | Equal-width grid columns |
+| `.p-1` / `.p-2` / `.p-4` | Padding on all sides |
+| `.px-1` / `.px-2` | Padding left and right |
+| `.py-1` / `.py-2` | Padding top and bottom |
+| `.m-1` / `.m-2` / `.m-4` | Margin on all sides |
+| `.mx-1` / `.mx-2` | Margin left and right |
+| `.my-1` / `.my-2` | Margin top and bottom |
 
 ---
 
