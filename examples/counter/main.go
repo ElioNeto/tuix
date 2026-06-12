@@ -34,6 +34,7 @@ func main() {
 			padding: 1;
 			background-color: #1a1a2e;
 			color: #e0e0e0;
+			width: 100%;
 		}
 
 		h1 {

@@ -446,8 +446,8 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 		style.BorderLeft = parseBorderValue(decl.Value)
 
 	case "border-width":
-		if decl.Value.Type == css.ValueList {
-			vals := borderValues(decl.Value)
+		vals := borderValues(decl.Value)
+		if len(vals) > 0 {
 			if len(vals) >= 1 {
 				style.BorderTop.Width = vals[0]
 				style.BorderRight.Width = vals[0]
@@ -473,8 +473,8 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 		}
 
 	case "border-style":
-		if decl.Value.Type == css.ValueList {
-			styles := borderStyleValues(decl.Value)
+		styles := borderStyleValues(decl.Value)
+		if len(styles) > 0 {
 			if len(styles) >= 1 {
 				style.BorderTop.Style = styles[0]
 				style.BorderRight.Style = styles[0]
@@ -500,8 +500,8 @@ func applyDeclaration(style *ComputedStyle, decl *css.Declaration) {
 		}
 
 	case "border-color":
-		if decl.Value.Type == css.ValueList {
-			colors := borderColorValues(decl.Value)
+		colors := borderColorValues(decl.Value)
+		if len(colors) > 0 {
 			if len(colors) >= 1 {
 				style.BorderTop.Color = colors[0]
 				style.BorderRight.Color = colors[0]
@@ -686,8 +686,8 @@ func applyPadding(style *ComputedStyle, v css.Value) {
 }
 
 func applyBorder(style *ComputedStyle, v css.Value) {
-	// Handle single value (e.g., border: solid)
-	if v.Type == css.ValueKeyword {
+	// Handle single value (e.g., border: solid, border: 1px)
+	if v.Type == css.ValueKeyword && len(v.Values) == 0 {
 		bs := parseBorderStyleKeyword(v.Keyword)
 		if bs != BorderNone {
 			style.BorderTop.Style = bs
@@ -696,10 +696,11 @@ func applyBorder(style *ComputedStyle, v css.Value) {
 			style.BorderLeft.Style = bs
 			// Default width if none set
 			if style.BorderTop.Width.Unit == LengthAuto {
-				style.BorderTop.Width = Length{Value: 1, Unit: LengthPx}
-				style.BorderRight.Width = Length{Value: 1, Unit: LengthPx}
-				style.BorderBottom.Width = Length{Value: 1, Unit: LengthPx}
-				style.BorderLeft.Width = Length{Value: 1, Unit: LengthPx}
+				w := Length{Value: 1, Unit: LengthPx}
+				style.BorderTop.Width = w
+				style.BorderRight.Width = w
+				style.BorderBottom.Width = w
+				style.BorderLeft.Width = w
 			}
 		}
 		return
@@ -723,8 +724,9 @@ func applyBorder(style *ComputedStyle, v css.Value) {
 		return
 	}
 
-	if v.Type == css.ValueList {
-		for _, sv := range v.Values {
+	// Multiple values (e.g., border: 1px solid red)
+	parts := valueList(v)
+	for _, sv := range parts {
 			if sv.Type == css.ValueLength || sv.Type == css.ValueKeyword || sv.Type == css.ValueColor {
 				// Check if it's a width, style, or color
 				switch strings.ToLower(sv.Keyword) {
@@ -753,27 +755,25 @@ func applyBorder(style *ComputedStyle, v css.Value) {
 						style.BorderRight.Width = l
 						style.BorderBottom.Width = l
 						style.BorderLeft.Width = l
-					}
-				}
 			}
 		}
 	}
 }
+}
 
 func parseBorderValue(v css.Value) Border {
 	b := Border{Width: Length{Unit: LengthAuto}, Style: BorderNone, Color: ColorValue{Defined: false}}
-	if v.Type == css.ValueList {
-		for _, sv := range v.Values {
-			switch {
-			case sv.Type == css.ValueColor || sv.Color.Type != css.ColorHex || sv.Color.Hex != "":
-				b.Color = cssColorToColorValue(sv)
-			case sv.Type == css.ValueLength || sv.Keyword == "thin" || sv.Keyword == "medium" || sv.Keyword == "thick":
-				b.Width = cssLengthToStyleLength(sv)
-			case sv.Type == css.ValueKeyword:
-				bs := parseBorderStyleKeyword(sv.Keyword)
-				if bs != BorderNone {
-					b.Style = bs
-				}
+	parts := valueList(v)
+	for _, sv := range parts {
+		switch {
+		case sv.Type == css.ValueColor || sv.Color.Type != css.ColorHex || sv.Color.Hex != "":
+			b.Color = cssColorToColorValue(sv)
+		case sv.Type == css.ValueLength || sv.Keyword == "thin" || sv.Keyword == "medium" || sv.Keyword == "thick":
+			b.Width = cssLengthToStyleLength(sv)
+		case sv.Type == css.ValueKeyword:
+			bs := parseBorderStyleKeyword(sv.Keyword)
+			if bs != BorderNone {
+				b.Style = bs
 			}
 		}
 	}
@@ -873,36 +873,40 @@ func cssColorToColorValue(v css.Value) ColorValue {
 	return ColorValue{Defined: false}
 }
 
-func lengthValues(v css.Value) []Length {
+// valueList extracts sub-values from a Value that may contain multiple parts
+// (space-separated or ValueList). Returns the sub-values or a slice with v itself.
+func valueList(v css.Value) []css.Value {
 	if v.Type == css.ValueList {
-		rv := make([]Length, 0, len(v.Values))
-		for _, sv := range v.Values {
-			if sv.Type != css.ValueList {
-				rv = append(rv, cssLengthToStyleLength(sv))
-			}
-		}
-		return rv
+		return v.Values
 	}
-	return []Length{cssLengthToStyleLength(v)}
+	if v.Type == css.ValueKeyword && len(v.Values) > 0 {
+		return v.Values
+	}
+	return []css.Value{v}
+}
+
+func lengthValues(v css.Value) []Length {
+	parts := valueList(v)
+	rv := make([]Length, 0, len(parts))
+	for _, sv := range parts {
+		rv = append(rv, cssLengthToStyleLength(sv))
+	}
+	return rv
 }
 
 func borderStyleValues(v css.Value) []BorderStyle {
-	if v.Type != css.ValueList {
-		return nil
-	}
-	rv := make([]BorderStyle, 0, len(v.Values))
-	for _, sv := range v.Values {
+	parts := valueList(v)
+	rv := make([]BorderStyle, 0, len(parts))
+	for _, sv := range parts {
 		rv = append(rv, parseBorderStyleKeyword(sv.Keyword))
 	}
 	return rv
 }
 
 func borderColorValues(v css.Value) []ColorValue {
-	if v.Type != css.ValueList {
-		return nil
-	}
-	rv := make([]ColorValue, 0, len(v.Values))
-	for _, sv := range v.Values {
+	parts := valueList(v)
+	rv := make([]ColorValue, 0, len(parts))
+	for _, sv := range parts {
 		rv = append(rv, cssColorToColorValue(sv))
 	}
 	return rv
