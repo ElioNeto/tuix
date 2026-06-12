@@ -714,3 +714,125 @@ func (c Color) String() string {
 	}
 	return "unknown"
 }
+
+// ANSI256Palette is the complete 256-color ANSI palette.
+// Indices 0-15: standard ANSI colors
+// Indices 16-231: 6x6x6 RGB cube
+// Indices 232-255: grayscale ramp
+var ANSI256Palette [256]Color
+
+func init() {
+	// Initialize the 256-color palette
+	// Standard 16 ANSI colors
+	ansiColors := []struct{ r, g, b uint8 }{
+		{0, 0, 0},       // 0: Black
+		{128, 0, 0},     // 1: Red
+		{0, 128, 0},     // 2: Green
+		{128, 128, 0},   // 3: Yellow
+		{0, 0, 128},     // 4: Blue
+		{128, 0, 128},   // 5: Magenta
+		{0, 128, 128},   // 6: Cyan
+		{192, 192, 192}, // 7: White
+		{128, 128, 128}, // 8: Bright Black (Gray)
+		{255, 0, 0},     // 9: Bright Red
+		{0, 255, 0},     // 10: Bright Green
+		{255, 255, 0},   // 11: Bright Yellow
+		{0, 0, 255},     // 12: Bright Blue
+		{255, 0, 255},   // 13: Bright Magenta
+		{0, 255, 255},   // 14: Bright Cyan
+		{255, 255, 255}, // 15: Bright White
+	}
+	for i, c := range ansiColors {
+		ANSI256Palette[i] = Color{Type: ColorTrue, R: c.r, G: c.g, B: c.b}
+	}
+
+	// 6x6x6 color cube (indices 16-231)
+	for r := 0; r < 6; r++ {
+		for g := 0; g < 6; g++ {
+			for b := 0; b < 6; b++ {
+				idx := 16 + r*36 + g*6 + b
+				rr := uint8(r * 255 / 5)
+				gg := uint8(g * 255 / 5)
+				bb := uint8(b * 255 / 5)
+				ANSI256Palette[idx] = Color{Type: ColorTrue, R: rr, G: gg, B: bb}
+			}
+		}
+	}
+
+	// Grayscale ramp (indices 232-255)
+	for i := 0; i < 24; i++ {
+		v := uint8(i*10 + 8)
+		ANSI256Palette[232+i] = Color{Type: ColorTrue, R: v, G: v, B: v}
+	}
+}
+
+// To256 finds the nearest 256-color palette index for a given color.
+// This is the public equivalent of approximateTo256.
+func To256(c Color) uint8 {
+	if c.Type == Color256 {
+		return c.Index
+	}
+	if c.Type == ColorANSI {
+		return uint8(c.Index)
+	}
+	return approximateTo256(c.R, c.G, c.B)
+}
+
+// ToANSI finds the nearest standard ANSI 16-color index for a given color.
+func ToANSI(c Color) uint8 {
+	if c.Type == ColorANSI {
+		return c.Index
+	}
+	if c.Type == Color256 {
+		c = ToTrue(c)
+	}
+
+	// Find nearest of the 16 standard ANSI colors
+	bestIdx := uint8(0)
+	bestDist := int(^uint(0) >> 1)
+	for i := 0; i < 16; i++ {
+		p := ANSI256Palette[i]
+		dr := int(c.R) - int(p.R)
+		dg := int(c.G) - int(p.G)
+		db := int(c.B) - int(p.B)
+		dist := dr*dr + dg*dg + db*db
+		if dist < bestDist {
+			bestDist = dist
+			bestIdx = uint8(i)
+		}
+	}
+	return bestIdx
+}
+
+// ToTrue converts an ANSI or 256-color to its true color RGB equivalent.
+// If the color is already true color, returns it unchanged.
+func ToTrue(c Color) Color {
+	if c.Type == ColorTrue {
+		return c
+	}
+	if c.Type == ColorANSI || c.Type == Color256 {
+		return ANSI256Palette[c.Index]
+	}
+	return c
+}
+
+// ClosestPalette finds the index of the closest color in a palette
+// using Euclidean distance in RGB space.
+func ClosestPalette(c Color, palette []Color) int {
+	if len(palette) == 0 {
+		return -1
+	}
+	bestIdx := 0
+	bestDist := int(^uint(0) >> 1)
+	for i, p := range palette {
+		dr := int(c.R) - int(p.R)
+		dg := int(c.G) - int(p.G)
+		db := int(c.B) - int(p.B)
+		dist := dr*dr + dg*dg + db*db
+		if dist < bestDist {
+			bestDist = dist
+			bestIdx = i
+		}
+	}
+	return bestIdx
+}

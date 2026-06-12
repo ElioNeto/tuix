@@ -370,3 +370,115 @@ func absDiff(a, b uint8) int {
 	if a > b { return int(a) - int(b) }
 	return int(b) - int(a)
 }
+
+func TestANSI256PaletteSize(t *testing.T) {
+	if len(ANSI256Palette) != 256 {
+		t.Fatalf("expected 256 colors, got %d", len(ANSI256Palette))
+	}
+}
+
+func TestANSI256PaletteFirst(t *testing.T) {
+	if ANSI256Palette[0].R != 0 || ANSI256Palette[0].G != 0 || ANSI256Palette[0].B != 0 {
+		t.Fatal("ANSI256Palette[0] should be black")
+	}
+}
+
+func TestANSI256PaletteLast(t *testing.T) {
+	if ANSI256Palette[255].R != 238 || ANSI256Palette[255].G != 238 || ANSI256Palette[255].B != 238 {
+		t.Fatalf("ANSI256Palette[255] expected (238,238,238), got (%d,%d,%d)",
+			ANSI256Palette[255].R, ANSI256Palette[255].G, ANSI256Palette[255].B)
+	}
+}
+
+func TestTo256TrueColor(t *testing.T) {
+	red := Color{Type: ColorTrue, R: 255, G: 0, B: 0}
+	idx := To256(red)
+	// Red should map to index 9 (bright red) or nearby
+	if idx != 9 && idx != 1 && idx != 196 {
+		t.Fatalf("To256(red) expected 9, 1, or 196, got %d", idx)
+	}
+}
+
+func TestTo256Already(t *testing.T) {
+	c := Color{Type: Color256, Index: 42}
+	if To256(c) != 42 {
+		t.Fatal("To256 of Color256 should return its index")
+	}
+}
+
+func TestToANSI(t *testing.T) {
+	red := Color{Type: ColorTrue, R: 255, G: 0, B: 0}
+	idx := ToANSI(red)
+	if idx != 9 { // bright red
+		t.Fatalf("ToANSI(red) expected 9, got %d", idx)
+	}
+}
+
+func TestToANSIBlack(t *testing.T) {
+	black := Color{Type: ColorTrue, R: 0, G: 0, B: 0}
+	if ToANSI(black) != 0 {
+		t.Fatalf("ToANSI(black) expected 0, got %d", ToANSI(black))
+	}
+}
+
+func TestToANSIWhite(t *testing.T) {
+	white := Color{Type: ColorTrue, R: 255, G: 255, B: 255}
+	if ToANSI(white) != 15 {
+		t.Fatalf("ToANSI(white) expected 15, got %d", ToANSI(white))
+	}
+}
+
+func TestToTrue(t *testing.T) {
+	c := Color{Type: ColorANSI, Index: 9} // bright red
+	trueC := ToTrue(c)
+	if trueC.R != 255 || trueC.G != 0 || trueC.B != 0 {
+		t.Fatalf("ToTrue(ANSI 9) expected (255,0,0), got (%d,%d,%d)", trueC.R, trueC.G, trueC.B)
+	}
+}
+
+func TestToTrueAlready(t *testing.T) {
+	c := Color{Type: ColorTrue, R: 100, G: 150, B: 200}
+	trueC := ToTrue(c)
+	if trueC.R != 100 || trueC.G != 150 || trueC.B != 200 {
+		t.Fatal("ToTrue of true color should return unchanged")
+	}
+}
+
+func TestClosestPalette(t *testing.T) {
+	palette := []Color{
+		{Type: ColorTrue, R: 255, G: 0, B: 0},
+		{Type: ColorTrue, R: 0, G: 255, B: 0},
+		{Type: ColorTrue, R: 0, G: 0, B: 255},
+	}
+	red := Color{Type: ColorTrue, R: 200, G: 0, B: 0}
+	idx := ClosestPalette(red, palette)
+	if idx != 0 {
+		t.Fatalf("ClosestPalette(expected 0 for red), got %d", idx)
+	}
+}
+
+func TestClosestPaletteEmpty(t *testing.T) {
+	if ClosestPalette(Color{}, nil) != -1 {
+		t.Fatal("ClosestPalette with empty palette should return -1")
+	}
+}
+
+func TestANSI256Grayscale(t *testing.T) {
+	// Index 232 should be very dark gray
+	if ANSI256Palette[232].R != 8 {
+		t.Fatalf("ANSI256Palette[232].R expected 8, got %d", ANSI256Palette[232].R)
+	}
+	// Index 255 should be near white (238)
+	if ANSI256Palette[255].R != 238 {
+		t.Fatalf("ANSI256Palette[255].R expected 238, got %d", ANSI256Palette[255].R)
+	}
+}
+
+func TestTo256Gray(t *testing.T) {
+	gray := Color{Type: ColorTrue, R: 128, G: 128, B: 128}
+	idx := To256(gray)
+	// Gray should map to grayscale range (232-255)
+	if idx < 232 || idx > 255 {
+		t.Fatalf("To256(gray) expected 232-255, got %d", idx)
+	}
+}
