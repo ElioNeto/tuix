@@ -61,7 +61,7 @@ func main() {
 		#app {
 			padding: 1;
 			background-color: #1a1a2e;
-			color: #c0c0c0;
+			color: #0f3460;
 		}
 		h1 {
 			color: #00d4aa;
@@ -81,19 +81,12 @@ func main() {
 		.muted {
 			color: #555;
 		}
-		/* Pulse styling: toggle between visible and invisible */
+		/* Pulse and blink are now text-based (no CSS attribute selectors) */
 		.animate-pulse {
-			color: #555;
-		}
-		.animate-pulse[pulsing] {
 			color: #00ff00;
 			font-weight: bold;
 		}
-		/* Blink styling: toggle between visible and invisible */
 		.animate-blink {
-			color: transparent;
-		}
-		.animate-blink[blinking] {
 			color: #00ff00;
 		}
 	`)
