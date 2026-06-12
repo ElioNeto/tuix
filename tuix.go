@@ -1481,6 +1481,20 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 			}
 			a.prepareColorDOM(node, val)
 
+		case "date":
+			// Date picker handled separately
+			val := a.formValues[node]
+			if val == "" {
+				val = node.GetAttribute("value")
+				if val == "" {
+					// Default to today's date
+					now := time.Now()
+					val = fmt.Sprintf("%04d-%02d-%02d", now.Year(), now.Month(), now.Day())
+				}
+				a.formValues[node] = val
+			}
+			a.prepareDateDOM(node, val)
+
 		default: // text, password, email, number, etc.
 			val := a.formValues[node]
 			isPassword := inputType == "password"
@@ -1914,6 +1928,9 @@ func (a *App) handleFormEvent(event terminal.Event) bool {
 		case "color":
 			// Color input: left/right arrows cycle colors
 			return a.handleColorEdit(event, focused)
+		case "date":
+			// Date input: arrow keys navigate segments, up/down adjust
+			return a.handleDateEdit(event, focused)
 		default: // text, password, email, etc.
 			return a.handleTextEdit(event, focused)
 		}
@@ -2403,6 +2420,162 @@ func (a *App) handleColorEdit(event terminal.Event, node *dom.Node) bool {
 		// All other keys are ignored
 		return true
 	}
+}
+
+// prepareDateDOM renders <input type="date"> with segment highlighting.
+// Format: "2026-06-12" with year/month/day segments.
+func (a *App) prepareDateDOM(node *dom.Node, val string) {
+	if val == "" {
+		now := time.Now()
+		val = fmt.Sprintf("%04d-%02d-%02d", now.Year(), now.Month(), now.Day())
+	}
+	// Validate format YYYY-MM-DD
+	if len(val) != 10 || val[4] != '-' || val[7] != '-' {
+		now := time.Now()
+		val = fmt.Sprintf("%04d-%02d-%02d", now.Year(), now.Month(), now.Day())
+	}
+	// Show date with segment indicators when focused
+	isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
+	if isFocused {
+		// Get the active segment from cursor or default to 0
+		segment := a.formCursors[node]
+		if segment < 0 || segment > 2 {
+			segment = 0
+		}
+		// Parse segments
+		parts := strings.Split(val, "-")
+		if len(parts) != 3 {
+			a.setInputTextChild(node, val)
+			return
+		}
+		// Bold brackets around active segment
+		display := ""
+		for i, part := range parts {
+			if i > 0 {
+				display += "-"
+			}
+			if i == segment {
+				display += "[" + part + "]"
+			} else {
+				display += part
+			}
+		}
+		a.setInputTextChild(node, display)
+	} else {
+		a.setInputTextChild(node, val)
+	}
+}
+
+// handleDateEdit handles keyboard input for <input type="date">.
+// Navigation between year/month/day segments, up/down to adjust values.
+func (a *App) handleDateEdit(event terminal.Event, node *dom.Node) bool {
+	val := a.formValues[node]
+	if val == "" {
+		now := time.Now()
+		val = fmt.Sprintf("%04d-%02d-%02d", now.Year(), now.Month(), now.Day())
+		a.formValues[node] = val
+	}
+
+	// Parse current date
+	parts := strings.Split(val, "-")
+	if len(parts) != 3 {
+		return true
+	}
+	year, _ := parseInt(parts[0])
+	month, _ := parseInt(parts[1])
+	day, _ := parseInt(parts[2])
+
+	// Get current segment (0=year, 1=month, 2=day)
+	segment := a.formCursors[node]
+	if segment < 0 || segment > 2 {
+		segment = 0
+	}
+
+	switch event.Key {
+	case terminal.KeyLeft:
+		segment--
+		if segment < 0 {
+			segment = 2
+		}
+		a.formCursors[node] = segment
+		a.renderFrame()
+		return true
+
+	case terminal.KeyRight:
+		segment++
+		if segment > 2 {
+			segment = 0
+		}
+		a.formCursors[node] = segment
+		a.renderFrame()
+		return true
+
+	case terminal.KeyUp:
+		switch segment {
+		case 0: // year
+			year++
+		case 1: // month
+			month++
+			if month > 12 {
+				month = 1
+			}
+		case 2: // day
+			day++
+			maxDay := daysInMonth(year, month)
+			if day > maxDay {
+				day = 1
+			}
+		}
+		a.formValues[node] = fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+		a.renderFrame()
+		return true
+
+	case terminal.KeyDown:
+		switch segment {
+		case 0: // year
+			year--
+		case 1: // month
+			month--
+			if month < 1 {
+				month = 12
+			}
+		case 2: // day
+			day--
+			if day < 1 {
+				maxDay := daysInMonth(year, month)
+				day = maxDay
+			}
+		}
+		a.formValues[node] = fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+		a.renderFrame()
+		return true
+
+	default:
+		// All other keys are ignored
+		return true
+	}
+}
+
+// daysInMonth returns the number of days in a given month/year.
+func daysInMonth(year, month int) int {
+	switch time.Month(month) {
+	case time.January, time.March, time.May, time.July,
+		time.August, time.October, time.December:
+		return 31
+	case time.April, time.June, time.September, time.November:
+		return 30
+	case time.February:
+		if isLeapYear(year) {
+			return 29
+		}
+		return 28
+	}
+	return 30
+}
+
+// isLeapYear returns true if the given year is a leap year.
+func isLeapYear(year int) bool {
+	return year%400 == 0 || (year%4 == 0 && year%100 != 0)
 }
 
 // handleRangeClick handles a mouse click on a range input.
