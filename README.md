@@ -739,7 +739,7 @@ Theme colors are applied as CSS utility classes — `.bg-primary`, `.text-muted`
 - [x] **Focus management** — `:focus` pseudo-class, focus ring, `tabindex`, auto-focus, OnFocus/OnBlur callbacks
 - [x] **Hover effects** — `:hover` pseudo-class trigger, mouse enter/leave events
 - [x] **ASCII art image converter** — PNG/JPEG/GIF → ASCII art with dithering, true-color output, GIF frame support
-- [ ] **CSS animations & transitions** — Animated property changes
+- [x] **CSS animations & transitions** — Spinner, pulse, blink effects with 200ms ticker
 - [x] **Modal / Dialog** — Overlay modal with backdrop, focus trap, `Esc` to close
 - [x] **Alert / Toast notifications** — Non-blocking notification popups with auto-dismiss, alert/confirm dialogs
 - [x] **Z-index / stacking contexts** — Proper layering of overlapping elements
@@ -748,7 +748,7 @@ Theme colors are applied as CSS utility classes — `.bg-primary`, `.text-muted`
 - [ ] **Image rendering** — Sixel and Kitty image protocols
 - [ ] **Comprehensive test suite** — Unit and integration tests
 - [ ] **Windows native support** — Windows console API fallback
-- [ ] **CSS animations & transitions** — Animated property changes
+- [x] **CSS animations & transitions** — Spinner, pulse, blink effects with 200ms ticker
 
 ---
 
