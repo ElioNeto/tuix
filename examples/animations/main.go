@@ -86,7 +86,7 @@ func main() {
 			color: #555;
 		}
 		.animate-pulse[pulsing] {
-			color: #e94560;
+			color: #00d4aa;
 			font-weight: bold;
 		}
 		/* Blink styling: shown when blinking attribute is present */
@@ -94,7 +94,7 @@ func main() {
 			color: #555;
 		}
 		.animate-blink[blinking] {
-			color: #e94560;
+			color: #00d4aa;
 		}
 	`)
 
