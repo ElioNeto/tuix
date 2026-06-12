@@ -1453,39 +1453,64 @@ func (a *App) initFormState(node *dom.Node) {
 	case "select":
 		isMultiple := node.HasAttribute("multiple")
 		if isMultiple {
-			// Collect all initially selected options
+			// Collect all initially selected options (including inside optgroup)
 			var selectedOptions []string
-			for _, child := range node.Children {
-				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-					if child.HasAttribute("selected") {
-						for _, textChild := range child.Children {
-							if textChild.Type == dom.NodeText {
-								selectedOptions = append(selectedOptions, textChild.Data)
-								break
-							}
+			var walkSelected func(*dom.Node)
+			walkSelected = func(n *dom.Node) {
+				if n == nil || n.Type != dom.NodeElement {
+					return
+				}
+				tag := strings.ToLower(n.Data)
+				if tag == "option" && n.HasAttribute("selected") {
+					for _, tc := range n.Children {
+						if tc.Type == dom.NodeText {
+							selectedOptions = append(selectedOptions, tc.Data)
+							break
 						}
 					}
 				}
+				if tag == "optgroup" {
+					for _, child := range n.Children {
+						walkSelected(child)
+					}
+				}
+			}
+			for _, child := range node.Children {
+				walkSelected(child)
 			}
 			if len(selectedOptions) > 0 {
 				a.formValues[node] = strings.Join(selectedOptions, "|")
 			}
 		} else {
-			// Find initially selected option
-			for _, child := range node.Children {
-				if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-					if child.HasAttribute("selected") || a.formValues[node] == "" {
-						// Use option's text content
-						for _, textChild := range child.Children {
-							if textChild.Type == dom.NodeText {
-								a.formValues[node] = textChild.Data
-								break
+			// Find initially selected option (including inside optgroup)
+			var findSelected func(*dom.Node) bool
+			findSelected = func(n *dom.Node) bool {
+				if n == nil || n.Type != dom.NodeElement {
+					return false
+				}
+				tag := strings.ToLower(n.Data)
+				if tag == "option" {
+					if n.HasAttribute("selected") || a.formValues[node] == "" {
+						for _, tc := range n.Children {
+							if tc.Type == dom.NodeText {
+								a.formValues[node] = tc.Data
+								return n.HasAttribute("selected")
 							}
 						}
 					}
-					if child.HasAttribute("selected") {
-						break
+				}
+				if tag == "optgroup" {
+					for _, child := range n.Children {
+						if findSelected(child) {
+							return true
+						}
 					}
+				}
+				return false
+			}
+			for _, child := range node.Children {
+				if findSelected(child) {
+					break
 				}
 			}
 		}
@@ -1732,17 +1757,7 @@ func (a *App) prepareFormDOM(node *dom.Node) {
 		}
 
 		// Collect all option texts
-		options := make([]string, 0)
-		for _, child := range node.Children {
-			if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-				for _, textChild := range child.Children {
-					if textChild.Type == dom.NodeText {
-						options = append(options, textChild.Data)
-						break
-					}
-				}
-			}
-		}
+		options := collectSelectOptions(node)
 
 		// Check if focused — show dropdown
 		isFocused := a.formFocused >= 0 && a.formFocused < len(a.formFocusables) && a.formFocusables[a.formFocused] == node
@@ -3240,20 +3255,40 @@ func (a *App) checkRadio(node *dom.Node) {
 	}
 }
 
-// cycleSelectOption moves to the next or previous option in a select element.
-// dir should be 1 for next, -1 for previous.
-func (a *App) cycleSelectOption(node *dom.Node, dir int) {
-	options := make([]string, 0)
-	for _, child := range node.Children {
-		if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-			for _, textChild := range child.Children {
-				if textChild.Type == dom.NodeText {
-					options = append(options, textChild.Data)
+// collectSelectOptions collects all <option> text values from a <select> element,
+// including options nested inside <optgroup> elements.
+func collectSelectOptions(node *dom.Node) []string {
+	var options []string
+	var walk func(*dom.Node)
+	walk = func(n *dom.Node) {
+		if n == nil || n.Type != dom.NodeElement {
+			return
+		}
+		tag := strings.ToLower(n.Data)
+		if tag == "option" {
+			for _, tc := range n.Children {
+				if tc.Type == dom.NodeText {
+					options = append(options, tc.Data)
 					break
 				}
 			}
+		} else if tag == "optgroup" {
+			// Recurse into optgroup for its option children
+			for _, child := range n.Children {
+				walk(child)
+			}
 		}
 	}
+	for _, child := range node.Children {
+		walk(child)
+	}
+	return options
+}
+
+// cycleSelectOption moves to the next or previous option in a select element.
+// dir should be 1 for next, -1 for previous.
+func (a *App) cycleSelectOption(node *dom.Node, dir int) {
+	options := collectSelectOptions(node)
 	if len(options) == 0 {
 		return
 	}
@@ -3280,19 +3315,11 @@ func (a *App) toggleMultiSelectOption(node *dom.Node) {
 
 	// Find the current option and toggle it
 	var toggledOpt string
-	options := make([]string, 0)
-	for _, child := range node.Children {
-		if child.Type == dom.NodeElement && strings.ToLower(child.Data) == "option" {
-			for _, textChild := range child.Children {
-				if textChild.Type == dom.NodeText {
-					opt := textChild.Data
-					options = append(options, opt)
-					if opt == current {
-						toggledOpt = opt
-					}
-					break
-				}
-			}
+	options := collectSelectOptions(node)
+	for _, opt := range options {
+		if opt == current {
+			toggledOpt = opt
+			break
 		}
 	}
 
